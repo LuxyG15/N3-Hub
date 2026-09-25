@@ -4483,7 +4483,139 @@ local BaseGroupbox = {}
 do
 	local Funcs = {}
 
-	--// GENERIC COMPONENT: Spotlight / Preview Card (Multi-fungsi untuk semua game)
+	--// GENERIC 3D VIEWPORT COMPONENT (MEWAH & BISA DIPUTAR 3D)
+	function Funcs:AddViewport(Idx, Info)
+		if self.Destroyed then return nil end
+
+		local Groupbox = self
+		local Container = Groupbox.Container
+
+		local ViewportFrame = New("ViewportFrame", {
+			BackgroundColor3 = "MainColor",
+			BackgroundTransparency = 0.5,
+			Size = UDim2.new(1, 0, 0, Info.Height or 140),
+			LightColor = Color3.fromRGB(255, 255, 255),
+			LightDirection = Vector3.new(-1, 2, -1),
+			Ambient = Color3.fromRGB(180, 180, 180),
+			Parent = Container,
+		})
+		table.insert(Library.Corners, New("UICorner", {
+			CornerRadius = UDim.new(0, Library.CornerRadius),
+			Parent = ViewportFrame,
+		}))
+		New("UIStroke", {
+			Color = "OutlineColor",
+			Thickness = 1,
+			Parent = ViewportFrame,
+		})
+
+		local Camera = Instance.new("Camera")
+		Camera.FieldOfView = 50
+		Camera.Parent = ViewportFrame
+		ViewportFrame.CurrentCamera = Camera
+
+		local WorldModel = Instance.new("WorldModel")
+		WorldModel.Parent = ViewportFrame
+
+		local CurrentModel = nil
+		local AngleX = 0
+		local AngleY = 0
+		local Dragging = false
+		local LastMousePos = Vector2.zero
+
+		local function AutoFocus(targetInstance)
+			if not targetInstance then return end
+			local cf, size
+			if targetInstance:IsA("Model") then
+				cf, size = targetInstance:GetBoundingBox()
+			else
+				cf, size = targetInstance.CFrame, targetInstance.Size
+			end
+			local maxDim = math.max(size.X, size.Y, size.Z)
+			local dist = maxDim / (2 * math.tan(math.rad(Camera.FieldOfView / 2))) * 1.35
+			Camera.CFrame = CFrame.new(cf.Position + Vector3.new(0, size.Y * 0.1, dist), cf.Position)
+		end
+
+		local ViewportObj = {
+			Frame = ViewportFrame,
+			Camera = Camera,
+			WorldModel = WorldModel,
+			Type = "Viewport",
+		}
+
+		function ViewportObj:SetModel(modelSource)
+			WorldModel:ClearAllChildren()
+			CurrentModel = nil
+			if not modelSource then return end
+
+			local clone = modelSource:Clone()
+			if clone:IsA("Model") or clone:IsA("BasePart") then
+				for _, desc in ipairs(clone:GetDescendants()) do
+					if desc:IsA("LuaSourceContainer") or desc:IsA("Sound") then
+						desc:Destroy()
+					elseif desc:IsA("BasePart") then
+						desc.Anchored = true
+						desc.CanCollide = false
+					end
+				end
+				if clone:IsA("BasePart") then clone.Anchored = true end
+
+				clone.Parent = WorldModel
+				CurrentModel = clone
+				AutoFocus(clone)
+			end
+		end
+
+		-- AUTO ROTATE & INTERACTIVE DRAG
+		local SpinConnection = nil
+		if Info.Spin ~= false then
+			SpinConnection = game:GetService("RunService").RenderStepped:Connect(function(dt)
+				if not Dragging and CurrentModel then
+					AngleY = (AngleY + dt * 40) % 360
+					local cf, _ = CurrentModel:IsA("Model") and CurrentModel:GetBoundingBox() or CurrentModel.CFrame
+					local dist = (Camera.CFrame.Position - cf.Position).Magnitude
+					local rad = math.rad(AngleY)
+					Camera.CFrame = CFrame.new(cf.Position + Vector3.new(math.sin(rad) * dist, dist * 0.25, math.cos(rad) * dist), cf.Position)
+				end
+			end)
+		end
+
+		if Info.Interactive then
+			ViewportFrame.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					Dragging = true
+					LastMousePos = Vector2.new(input.Position.X, input.Position.Y)
+				end
+			end)
+			game:GetService("UserInputService").InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					Dragging = false
+				end
+			end)
+			game:GetService("UserInputService").InputChanged:Connect(function(input)
+				if Dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+					local curPos = Vector2.new(input.Position.X, input.Position.Y)
+					local delta = curPos - LastMousePos
+					LastMousePos = curPos
+					AngleY = (AngleY - delta.X * 0.8) % 360
+					if CurrentModel then
+						local cf, _ = CurrentModel:IsA("Model") and CurrentModel:GetBoundingBox() or CurrentModel.CFrame
+						local dist = (Camera.CFrame.Position - cf.Position).Magnitude
+						local rad = math.rad(AngleY)
+						Camera.CFrame = CFrame.new(cf.Position + Vector3.new(math.sin(rad) * dist, dist * 0.25, math.cos(rad) * dist), cf.Position)
+					end
+				end
+			end)
+		end
+
+		Groupbox:Resize()
+		table.insert(Groupbox.Elements, ViewportObj)
+		if Idx then Options[Idx] = ViewportObj end
+
+		return ViewportObj
+	end
+
+	--// SPOTLIGHT CARD: 3D VIEWPORT READY + CLEAN NEWLINE TEXT
 	function Funcs:AddSpotlightCard(Idx, Info)
 		if self.Destroyed then return nil end
 
@@ -4506,35 +4638,48 @@ do
 			Parent = CardFrame,
 		})
 
-		local CardPadding = New("UIPadding", {
-			PaddingBottom = UDim.new(0, 8),
-			PaddingLeft = UDim.new(0, 8),
-			PaddingRight = UDim.new(0, 8),
-			PaddingTop = UDim.new(0, 8),
+		-- CONTAINER KIRI (BISA GAMBAR 2D ATAU VIEWPORT 3D)
+		local MediaBox = New("Frame", {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(8, 8),
+			Size = UDim2.new(0, (Info.Height or 120) - 16, 1, -16),
 			Parent = CardFrame,
 		})
 
 		local IconImg = New("ImageLabel", {
 			BackgroundTransparency = 1,
-			Size = UDim2.new(0, (Info.Height or 120) - 16, 1, 0),
+			Size = UDim2.fromScale(1, 1),
 			Image = Info.Image or "",
 			ScaleType = Enum.ScaleType.Fit,
-			Parent = CardFrame,
+			Parent = MediaBox,
 		})
-		table.insert(Library.Corners, New("UICorner", {
-			CornerRadius = UDim.new(0, Library.CornerRadius / 2),
-			Parent = IconImg,
-		}))
 
+		local Viewport3D = New("ViewportFrame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			LightColor = Color3.fromRGB(255, 255, 255),
+			Ambient = Color3.fromRGB(190, 190, 190),
+			LightDirection = Vector3.new(-1, 2, -1),
+			Visible = false,
+			Parent = MediaBox,
+		})
+		local Cam3D = Instance.new("Camera")
+		Cam3D.FieldOfView = 48
+		Cam3D.Parent = Viewport3D
+		Viewport3D.CurrentCamera = Cam3D
+		local World3D = Instance.new("WorldModel")
+		World3D.Parent = Viewport3D
+
+		-- CONTAINER KANAN (TEKS BERTINGKAT KE BAWAH)
 		local InfoContainer = New("Frame", {
 			BackgroundTransparency = 1,
-			Position = UDim2.new(0, (Info.Height or 120) - 8, 0, 0),
-			Size = UDim2.new(1, -((Info.Height or 120)), 1, 0),
+			Position = UDim2.new(0, (Info.Height or 120) + 2, 0, 6),
+			Size = UDim2.new(1, -((Info.Height or 120) + 8), 1, -12),
 			Parent = CardFrame,
 		})
 		New("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
-			Padding = UDim.new(0, 3),
+			Padding = UDim.new(0, 2),
 			Parent = InfoContainer,
 		})
 
@@ -4542,18 +4687,19 @@ do
 			BackgroundTransparency = 1,
 			Size = UDim2.new(1, 0, 0, 18),
 			Text = Info.Title or "Title",
-			TextSize = 15,
+			TextSize = 13,
 			RichText = true,
 			Font = Enum.Font.GothamBold,
 			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = InfoContainer,
 		})
 
 		local DescLabel = New("TextLabel", {
 			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 1, -22),
+			Size = UDim2.new(1, 0, 1, -20),
 			Text = Info.Description or "Description",
-			TextSize = 13,
+			TextSize = 11,
 			RichText = true,
 			TextWrapped = true,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -4564,22 +4710,49 @@ do
 		local CardObj = {
 			Frame = CardFrame,
 			Icon = IconImg,
+			Viewport = Viewport3D,
 			Title = TitleLabel,
 			Desc = DescLabel,
 			Type = "SpotlightCard",
 		}
 
-		function CardObj:SetData(titleText, descText, imageAsset)
+		local CurSpinAngle = 0
+		game:GetService("RunService").RenderStepped:Connect(function(dt)
+			local petModel = World3D:FindFirstChildWhichIsA("Model") or World3D:FindFirstChildWhichIsA("BasePart")
+			if Viewport3D.Visible and petModel then
+				CurSpinAngle = (CurSpinAngle + dt * 45) % 360
+				local cf, size
+				if petModel:IsA("Model") then cf, size = petModel:GetBoundingBox() else cf, size = petModel.CFrame, petModel.Size end
+				local maxDim = math.max(size.X, size.Y, size.Z)
+				local dist = maxDim / (2 * math.tan(math.rad(Cam3D.FieldOfView / 2))) * 1.35
+				local rad = math.rad(CurSpinAngle)
+				Cam3D.CFrame = CFrame.new(cf.Position + Vector3.new(math.sin(rad) * dist, dist * 0.25, math.cos(rad) * dist), cf.Position)
+			end
+		end)
+
+		function CardObj:SetData(titleText, descText, imageAsset, modelSource)
 			if titleText then TitleLabel.Text = titleText end
 			if descText then DescLabel.Text = descText end
-			if imageAsset and imageAsset ~= "" then
-				IconImg.Image = imageAsset
-			end
-		end
 
-		function CardObj:SetVisible(val)
-			CardFrame.Visible = val
-			Groupbox:Resize()
+			if modelSource then
+				World3D:ClearAllChildren()
+				local clone = modelSource:Clone()
+				for _, desc in ipairs(clone:GetDescendants()) do
+					if desc:IsA("BasePart") then desc.Anchored = true desc.CanCollide = false end
+					if desc:IsA("LuaSourceContainer") or desc:IsA("Sound") then desc:Destroy() end
+				end
+				if clone:IsA("BasePart") then clone.Anchored = true end
+				clone.Parent = World3D
+
+				Viewport3D.Visible = true
+				IconImg.Visible = false
+			else
+				Viewport3D.Visible = false
+				IconImg.Visible = true
+				if imageAsset and imageAsset ~= "" then
+					IconImg.Image = imageAsset
+				end
+			end
 		end
 
 		Groupbox:Resize()
