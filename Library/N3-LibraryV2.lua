@@ -4589,7 +4589,7 @@ do
 		return CardObj
 	end
 
-	--// GENERIC COMPONENT: Dynamic Item List / Scroll Card (Persis Engine Chilli)
+	--// GENERIC COMPONENT: Dynamic Item List / Scroll Feed (Chilli Style Clean Card)
 	function Funcs:AddScrollFeed(Idx, Info)
 		if self.Destroyed then return nil end
 
@@ -4617,19 +4617,19 @@ do
 
 		local FeedLayout = New("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
-			Padding = UDim.new(0, 4),
+			Padding = UDim.new(0, 5),
 			Parent = FeedScroll,
 		})
 		New("UIPadding", {
-			PaddingBottom = UDim.new(0, 4),
-			PaddingLeft = UDim.new(0, 4),
-			PaddingRight = UDim.new(0, 4),
-			PaddingTop = UDim.new(0, 4),
+			PaddingBottom = UDim.new(0, 5),
+			PaddingLeft = UDim.new(0, 5),
+			PaddingRight = UDim.new(0, 5),
+			PaddingTop = UDim.new(0, 5),
 			Parent = FeedScroll,
 		})
 
 		local function UpdateCanvas()
-			FeedScroll.CanvasSize = UDim2.fromOffset(0, FeedLayout.AbsoluteContentSize.Y + 8)
+			FeedScroll.CanvasSize = UDim2.fromOffset(0, FeedLayout.AbsoluteContentSize.Y + 10)
 		end
 		FeedLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(UpdateCanvas)
 
@@ -4650,17 +4650,18 @@ do
 		end
 
 		function FeedObj:AddItem(itemData)
-			-- itemData = { Icon = "", Title = "", Detail = "", RightTag = "", OnClick = func }
+			-- itemData = { Icon = "", Title = "", Income = "", Weight = "", Mutation = "", RightTag = "", OnClick = func }
 			local RowBtn = New("TextButton", {
 				BackgroundColor3 = "BackgroundColor",
-				BackgroundTransparency = 0.3,
-				Size = UDim2.new(1, 0, 0, 42),
+				BackgroundTransparency = 0.35,
+				Size = UDim2.new(1, 0, 0, 56), -- Tinggi proporsional lebih luas
 				Text = "",
 				AutoButtonColor = true,
+				ClipsDescendants = true,
 				Parent = FeedScroll,
 			})
 			table.insert(Library.Corners, New("UICorner", {
-				CornerRadius = UDim.new(0, Library.CornerRadius / 2),
+				CornerRadius = UDim.new(0, Library.CornerRadius / 1.5),
 				Parent = RowBtn,
 			}))
 			New("UIStroke", {
@@ -4669,51 +4670,86 @@ do
 				Parent = RowBtn,
 			})
 
+			-- Gambar Pet Lebih Besar & Detail
 			local RowIcon = New("ImageLabel", {
 				BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(4, 4),
-				Size = UDim2.fromOffset(34, 34),
+				Position = UDim2.fromOffset(6, 6),
+				Size = UDim2.fromOffset(44, 44),
 				Image = itemData.Icon or "",
 				ScaleType = Enum.ScaleType.Fit,
 				Parent = RowBtn,
 			})
 
+			-- Container Teks agar tidak bocor keluar batas
+			local TextBlock = New("Frame", {
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(56, 4),
+				Size = UDim2.new(1, -62, 1, -8),
+				Parent = RowBtn,
+			})
+			local VLayout = New("UIListLayout", {
+				FillDirection = Enum.FillDirection.Vertical,
+				Padding = UDim.new(0, 1),
+				Parent = TextBlock,
+			})
+
+			-- Baris 1: Nama Pet [RARITY] [MUTATION] (Anti Bocor dengan TextTruncate)
+			local TitleText = itemData.Title or ""
+			if itemData.Mutation and itemData.Mutation ~= "" then
+				TitleText = TitleText .. string.format('  <font color="#FFAA00"><b>%s</b></font>', string.upper(itemData.Mutation))
+			end
+
 			local RowTitle = New("TextLabel", {
 				BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(44, 4),
-				Size = UDim2.new(1, -120, 0, 16),
-				Text = itemData.Title or "",
+				Size = UDim2.new(1, -70, 0, 16),
+				Text = TitleText,
 				TextSize = 13,
 				RichText = true,
 				Font = Enum.Font.GothamBold,
 				TextXAlignment = Enum.TextXAlignment.Left,
-				Parent = RowBtn,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = TextBlock,
 			})
 
-			local RowDetail = New("TextLabel", {
+			-- Baris 2: Income Rate (Hijau Tebal Chilli)
+			local RowIncome = New("TextLabel", {
 				BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(44, 20),
-				Size = UDim2.new(1, -120, 0, 16),
-				Text = itemData.Detail or "",
-				TextSize = 11,
-				RichText = true,
-				TextColor3 = Color3.fromRGB(180, 180, 180),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				Parent = RowBtn,
-			})
-
-			local RowRight = New("TextLabel", {
-				BackgroundTransparency = 1,
-				AnchorPoint = Vector2.new(1, 0.5),
-				Position = UDim2.new(1, -8, 0.5, 0),
-				Size = UDim2.fromOffset(100, 20),
-				Text = itemData.RightTag or "",
+				Size = UDim2.new(1, -70, 0, 15),
+				Text = string.format('<font color="#57F287"><b>%s</b></font>', itemData.Income or "0/s"),
 				TextSize = 11,
 				RichText = true,
 				Font = Enum.Font.GothamBold,
-				TextXAlignment = Enum.TextXAlignment.Right,
-				Parent = RowBtn,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = TextBlock,
 			})
+
+			-- Baris 3: Berat Kg Saja (Scale 0.93x sudah dibuang)
+			local RowWeight = New("TextLabel", {
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, -70, 0, 14),
+				Text = string.format('<font color="#CDE7FF">%s</font>', itemData.Weight or "0 Kg"),
+				TextSize = 10,
+				RichText = true,
+				Font = Enum.Font.Gotham,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = TextBlock,
+			})
+
+			-- Tag Kanan (Misal sisa waktu dan persen saat growing)
+			if itemData.RightTag and itemData.RightTag ~= "" then
+				local RowRight = New("TextLabel", {
+					BackgroundTransparency = 1,
+					AnchorPoint = Vector2.new(1, 0.5),
+					Position = UDim2.new(1, -8, 0.5, 0),
+					Size = UDim2.fromOffset(80, 24),
+					Text = itemData.RightTag,
+					TextSize = 11,
+					RichText = true,
+					Font = Enum.Font.GothamBold,
+					TextXAlignment = Enum.TextXAlignment.Right,
+					Parent = RowBtn,
+				})
+			end
 
 			if itemData.OnClick then
 				RowBtn.MouseButton1Click:Connect(itemData.OnClick)
