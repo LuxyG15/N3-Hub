@@ -30,7 +30,7 @@ pcall(function()
 
     local d = tostring(math.random(10000, 99999))
 
-    local e = "https://raw.githubusercontent.com/Omnie7/Luxy-Hub/refs/heads/main/Game/" .. c .. "?nocache=" .. d
+    local e = "https://github.com/LuxyG15/N3-Hub/tree/main/Games/" .. c .. "?nocache=" .. d
 
     local f = game:HttpGet(e)
     if f and f ~= "" then
