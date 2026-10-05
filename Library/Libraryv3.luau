@@ -1422,6 +1422,27 @@ function Library:ChangeCursorIconSize(Size: UDim2)
 	CursorCustomImage.Size = Size
 end
 
+--// SOUND ENGINE //--
+function Library:PlaySound(SoundId: string | number, Volume: number?, Pitch: number?)
+	task.spawn(function()
+		local id = tostring(SoundId)
+		if tonumber(id) then
+			id = "rbxassetid://" .. id
+		end
+		local sound = Instance.new("Sound")
+		sound.SoundId = id
+		sound.Volume = Volume or 1.5
+		sound.PlaybackSpeed = Pitch or 1
+		sound.PlayOnRemove = true
+		sound.Parent = SoundService
+		sound:Destroy()
+	end)
+end
+
+function Library:PlayClickSound()
+	Library:PlaySound("rbxassetid://9113876339", 1.2, 1)
+end
+
 function Library:GetBetterColor(Color: Color3, Add: number): Color3
 	Add = Add * (Library.IsLightTheme and -4 or 2)
 	return Color3.fromRGB(
@@ -1530,7 +1551,7 @@ end
 
 function GetNonOverlappingPosition(UI: GuiObject, StartPos: UDim2?)
 	local ScreenSize = (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080))
-		- Vector2.new(100, 100)
+	- Vector2.new(100, 100)
 	local Start = StartPos and Vector2.new(StartPos.X.Offset, StartPos.Y.Offset) or Vector2.new(6, 6)
 	local Padding = 6
 
@@ -2524,11 +2545,11 @@ function Library:AddContextMenu(
 			end
 
 			return true,
-				Library[string.format("%sTransitionInfo", AnimationType)] or TweenInfo.new(
-					0.18,
-					Enum.EasingStyle.Quad,
-					Enum.EasingDirection.Out
-				)
+			Library[string.format("%sTransitionInfo", AnimationType)] or TweenInfo.new(
+				0.18,
+				Enum.EasingStyle.Quad,
+				Enum.EasingDirection.Out
+			)
 		end,
 	}
 
@@ -2736,7 +2757,7 @@ Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input: InputObje
 			CurrentMenu
 			and not (
 				Library:MouseIsOverFrame(CurrentMenu.Menu, Location)
-				or Library:MouseIsOverFrame(CurrentMenu.Holder, Location)
+					or Library:MouseIsOverFrame(CurrentMenu.Holder, Location)
 			)
 		then
 			CurrentMenu:Close()
@@ -3841,7 +3862,7 @@ do
 					and HoldingModifiers == true
 					and (
 						SpecialKeysInput[Input.UserInputType] == Key
-						or (Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == Key)
+							or (Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == Key)
 					)
 				then
 					HoldingKey = true
@@ -4617,7 +4638,7 @@ do
 					Dragging
 					and (
 						input.UserInputType == Enum.UserInputType.MouseMovement
-						or input.UserInputType == Enum.UserInputType.Touch
+							or input.UserInputType == Enum.UserInputType.Touch
 					)
 				then
 					local curPos = Vector2.new(input.Position.X, input.Position.Y)
@@ -5405,6 +5426,10 @@ do
 				if Button.Disabled or Button.Locked then
 					return
 				end
+				Library:PlayClickSound()
+				if Library.PulseWindowGlow then
+					Library:PulseWindowGlow() -- <-- TAMBAH INI
+				end
 
 				if Button.DoubleClick then
 					Button.Locked = true
@@ -5803,6 +5828,11 @@ do
 
 			Library:UpdateDependencyBoxes()
 
+			--// MASUKKAN DI SINI BIAR PAS DI-KLIK ANIMASINYA JALAN:
+			if Library.PulseWindowGlow then
+				Library:PulseWindowGlow()
+			end
+
 			if not Toggle.AnyKeyPickerPicking then
 				Toggle:RunChanged()
 			end
@@ -5843,7 +5873,7 @@ do
 				if Toggle.Disabled then
 					return
 				end
-
+				Library:PlayClickSound() -- <-- TAMBAH INI
 				Toggle:SetValue(not Toggle.Value)
 			end)
 		)
@@ -6120,7 +6150,7 @@ do
 				if Toggle.Disabled then
 					return
 				end
-
+				Library:PlayClickSound() -- <-- TAMBAH INI
 				Toggle:SetValue(not Toggle.Value)
 			end)
 		)
@@ -7312,7 +7342,7 @@ do
 						if DragSelecting then
 							return
 						end
-
+						Library:PlayClickSound() -- <-- TAMBAH INI
 						local Try = not Selected
 						if not (Dropdown:GetActiveValues(true) == 1 and not Try and not Info.AllowNull) then
 							Selected = Try
@@ -7541,7 +7571,7 @@ do
 			if Dropdown.Disabled then
 				return
 			end
-
+			Library:PlayClickSound() -- <-- TAMBAH INI
 			MenuTable:Toggle()
 		end
 
@@ -8028,8 +8058,11 @@ do
 			Parent = Box,
 		}
 
-		local Icon = Library:GetCustomIcon(ImageProperties.Image)
-		assert(Icon, "Image must be a valid Roblox asset or a valid URL or a valid lucide icon.")
+		local Icon = Library:GetCustomIcon(ImageProperties.Image) or {
+			Url = "rbxassetid://95816097006870",
+			ImageRectOffset = Vector2.zero,
+			ImageRectSize = Vector2.zero,
+		}
 
 		ImageProperties.Image = Icon.Url
 		ImageProperties.ImageRectOffset = Icon.ImageRectOffset
@@ -8761,7 +8794,7 @@ function Library:Notify(...)
 		Data.DescriptionColor = Info.DescriptionColor
 
 		Data.Time = Info.Time or 5
-		Data.SoundId = Info.SoundId
+		Data.SoundId = Info.SoundId or "rbxassetid://92972986635552"
 		Data.Steps = Info.Steps
 		Data.Persist = Info.Persist
 
@@ -8773,7 +8806,7 @@ function Library:Notify(...)
 	else
 		Data.Description = tostring(Info)
 		Data.Time = select(2, ...) or 5
-		Data.SoundId = select(3, ...)
+		Data.SoundId = select(3, ...) or "rbxassetid://92972986635552"
 		Data.Volume = select(4, ...) or 3
 	end
 	Data.Destroyed = false
@@ -9203,7 +9236,219 @@ function Library:CreateWindow(WindowInfo)
 				Parent = MainFrame,
 			})
 		)
-		Library:AddOutline(MainFrame)
+		Library:AddOutline(MainFrame) -- <-- HAPUS BARIS INI! (Biar ga bentrok sama MainStroke ungu)
+
+		--// 1. NEON BORDER WINDOW LUAR (KETEBALAN KONSTAN 1.8px) \\--
+		local MainStroke = New("UIStroke", {
+			Name = "NeonWindowStroke",
+			Color = "AccentColor",
+			Thickness = 1.8,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			Parent = MainFrame,
+		})
+
+		--// INNER LASER CONTAINER (DEFAULT 100% MATI / BERSIH SAAT NORMAL) \\--
+		local InnerBorderFrame = New("Frame", {
+			Name = "InnerCollisionLaser",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundTransparency = 1,
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.new(1, -2, 1, -2),
+			ZIndex = MainFrame.ZIndex + 2,
+			Visible = false,
+			Parent = MainFrame,
+		})
+		table.insert(
+			Library.Corners,
+			New("UICorner", {
+				CornerRadius = UDim.new(0, math.max(0, WindowInfo.CornerRadius - 1)),
+				Parent = InnerBorderFrame,
+			})
+		)
+
+		local InnerStroke = New("UIStroke", {
+			Color = Color3.fromRGB(255, 255, 255),
+			Thickness = 1.4,
+			Transparency = 1,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			Parent = InnerBorderFrame,
+		})
+
+		local InnerGrad = Instance.new("UIGradient")
+		InnerGrad.Rotation = -45
+		InnerGrad.Parent = InnerStroke
+
+		--// 2. 6-LAYER GLOW RAMPING LUAR \\--
+		local GlowLayers = {
+			{ Thickness = 1, Transparency = 0.15 },
+			{ Thickness = 1.5, Transparency = 0.35 },
+			{ Thickness = 2, Transparency = 0.55 },
+			{ Thickness = 3, Transparency = 0.72 },
+			{ Thickness = 4.5, Transparency = 0.85 },
+			{ Thickness = 6.5, Transparency = 0.94 },
+		}
+
+		local OuterStrokes = { MainStroke }
+
+		for i, layer in ipairs(GlowLayers) do
+			local GlowFrame = New("Frame", {
+				Name = "ChiyoGlowLayer_" .. i,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				BackgroundTransparency = 1,
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.new(1, layer.Thickness * 2, 1, layer.Thickness * 2),
+				ZIndex = MainFrame.ZIndex - i,
+				Parent = MainFrame,
+			})
+			table.insert(
+				Library.Corners,
+				New("UICorner", {
+					CornerRadius = UDim.new(0, WindowInfo.CornerRadius + layer.Thickness),
+					Parent = GlowFrame,
+				})
+			)
+			local Stroke = New("UIStroke", {
+				Color = "AccentColor",
+				Thickness = layer.Thickness,
+				Transparency = layer.Transparency,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				Parent = GlowFrame,
+			})
+			table.insert(OuterStrokes, Stroke)
+		end
+
+		local OuterGradients = {}
+		for _, stroke in ipairs(OuterStrokes) do
+			local Grad = Instance.new("UIGradient")
+			Grad.Rotation = -45
+			Grad.Parent = stroke
+			table.insert(OuterGradients, Grad)
+		end
+
+		-- PALET WARNA DASAR
+		local CyanBlue = Color3.fromRGB(0, 220, 255)
+		local RadiantGold = Color3.fromRGB(255, 210, 30)
+		local PureWhite = Color3.fromRGB(255, 255, 255)
+
+		local function GetSolidSequence(accentColor)
+			return ColorSequence.new(accentColor, accentColor)
+		end
+
+		-- Set warna awal
+		for _, grad in ipairs(OuterGradients) do
+			grad.Color = GetSolidSequence(Library.Scheme.AccentColor)
+		end
+
+		--// 3. FLUID LERP ENGINE: SATU ALIRAN PENUH TANPA JEDA & TANPA KEJUT \\--
+		local PulseGeneration = 0
+
+		function Library:PulseWindowGlow()
+			if Library.Unloaded or not MainFrame or not MainFrame.Parent or not Library.Toggled then
+				return
+			end
+
+			PulseGeneration = PulseGeneration + 1
+			local curGen = PulseGeneration
+
+			task.spawn(function()
+				local curAccent = Library.Scheme.AccentColor
+				InnerBorderFrame.Visible = true
+
+				-- Nilai timeline animasi dari 0.00 sampai 1.00 dalam satu tarikan halus
+				local timeline = Instance.new("NumberValue")
+				timeline.Value = 0
+
+				-- Durasi 1.2 detik (sangat pas, mengalir natural)
+				local animTween = TweenService:Create(
+					timeline,
+					TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+					{ Value = 1.0 }
+				)
+
+				local animConn = timeline:GetPropertyChangedSignal("Value"):Connect(function()
+					local t = timeline.Value
+
+					if t < 0.60 then
+						-- [FASE 1]: Merambat dari kedua pojok saling mendekat (t = 0.0 s/d 0.60)
+						local crawl = t / 0.60
+						local reach = math.clamp(0.03 + crawl * 0.46, 0.03, 0.49)
+
+						-- Transparansi sinar dalam fade in lembut
+						InnerStroke.Transparency = math.clamp(1 - (t / 0.15) * 0.9, 0.1, 1)
+
+						local seq = ColorSequence.new({
+							ColorSequenceKeypoint.new(0.00, PureWhite),
+							ColorSequenceKeypoint.new(math.clamp(reach * 0.5, 0.01, 0.24), RadiantGold),
+							ColorSequenceKeypoint.new(reach, curAccent),
+							ColorSequenceKeypoint.new(math.clamp(1.00 - reach, 0.51, 0.98), curAccent),
+							ColorSequenceKeypoint.new(math.clamp(1.00 - reach * 0.5, 0.76, 0.99), CyanBlue),
+							ColorSequenceKeypoint.new(1.00, PureWhite),
+						})
+
+						for _, grad in ipairs(OuterGradients) do
+							if grad and grad.Parent then grad.Color = seq end
+						end
+						InnerGrad.Color = seq
+
+					else
+						-- [FASE 2]: KETEMU DI TENGAH & LANGSUNG MELEBUR HILANG (t = 0.60 s/d 1.0)
+						-- TANPA JEDA! Langsung mencair balik ke ungu/pink aslinya!
+						local dissolve = (t - 0.60) / 0.40 -- Progress melebur dari 0 ke 1
+
+						-- Sinar dalam window ikut memudar lembut
+						InnerStroke.Transparency = math.clamp(0.1 + dissolve * 0.9, 0.1, 1)
+
+						-- Lerp warna: Biru, Emas, dan Putih perlahan mencair menyatu ke curAccent
+						local goldFade = RadiantGold:Lerp(curAccent, dissolve)
+						local blueFade = CyanBlue:Lerp(curAccent, dissolve)
+						local whiteCenter = PureWhite:Lerp(curAccent, dissolve)
+
+						local seq = ColorSequence.new({
+							ColorSequenceKeypoint.new(0.00, whiteCenter),
+							ColorSequenceKeypoint.new(0.24, goldFade),
+							ColorSequenceKeypoint.new(0.48, whiteCenter),
+							ColorSequenceKeypoint.new(0.52, whiteCenter),
+							ColorSequenceKeypoint.new(0.76, blueFade),
+							ColorSequenceKeypoint.new(1.00, whiteCenter),
+						})
+
+						for _, grad in ipairs(OuterGradients) do
+							if grad and grad.Parent then grad.Color = seq end
+						end
+						InnerGrad.Color = seq
+					end
+				end)
+
+				animTween:Play()
+				animTween.Completed:Wait()
+				animConn:Disconnect()
+				timeline:Destroy()
+
+				-- [SELESAI]: Window 100% bersih & kembali ke ungu solid normal
+				if curGen == PulseGeneration then
+					InnerBorderFrame.Visible = false
+					InnerStroke.Transparency = 1
+
+					local solidSeq = GetSolidSequence(Library.Scheme.AccentColor)
+					for _, grad in ipairs(OuterGradients) do
+						if grad and grad.Parent then
+							grad.Color = solidSeq
+						end
+					end
+				end
+			end)
+		end
+
+		-- Background loop setiap 25 detik saat diam
+		coroutine.wrap(function()
+			while not Library.Unloaded and MainFrame and MainFrame.Parent do
+				task.wait(25)
+				if Library.Toggled and MainFrame.Visible then
+					Library:PulseWindowGlow()
+				end
+			end
+		end)()
+
 		Library:MakeLine(MainFrame, {
 			Position = UDim2.fromOffset(0, 48),
 			Size = UDim2.new(1, 0, 0, 1),
@@ -9305,166 +9550,21 @@ function Library:CreateWindow(WindowInfo)
 			Parent = TitleHolder,
 		})
 
-		--// Top Right Bar \\--
+		--// Top Right Bar (Search Bar Panjang Lebar Penuh Ala Chiyo) \\--
 		RightWrapper = New("Frame", {
 			AnchorPoint = Vector2.new(1, 0.5),
 			BackgroundTransparency = 1,
-			Position = UDim2.new(1, -49, 0.5, 0),
-			Size = UDim2.new(1, -InitialLeftWidth - 57 - 1, 1, -16),
+			Position = UDim2.new(1, -44, 0.5, 0),
+			Size = UDim2.new(1, -InitialLeftWidth - 55, 0, 34), -- Tebal & lega atas-bawah
 			Parent = TopBar,
 		})
 
-		New("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Right,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 8),
-			Parent = RightWrapper,
-		})
-
-		CurrentTabInfo = New("Frame", {
-			Size = UDim2.fromScale(WindowInfo.DisableSearch and 1 or 0.5, 1),
-			Visible = false,
-			BackgroundTransparency = 1,
-			Parent = RightWrapper,
-		})
-
-		New("UIFlexItem", {
-			FlexMode = Enum.UIFlexMode.Grow,
-			Parent = CurrentTabInfo,
-		})
-
-		New("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Left,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Parent = CurrentTabInfo,
-		})
-
-		New("UIPadding", {
-			PaddingBottom = UDim.new(0, 8),
-			PaddingLeft = UDim.new(0, 8),
-			PaddingRight = UDim.new(0, 8),
-			PaddingTop = UDim.new(0, 8),
-			Parent = CurrentTabInfo,
-		})
-
-		CurrentTabLabel = New("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			Text = "",
-			TextSize = 14,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = CurrentTabInfo,
-		})
-
-		CurrentTabDescription = New("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			Text = "",
-			TextWrapped = true,
-			TextSize = 14,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextTransparency = 0.5,
-			Parent = CurrentTabInfo,
-		})
-
-		--// Top Bar Stats
-		TopStatsContainer = New("Frame", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(0, 0, 1, 0),
-			Parent = RightWrapper,
-		})
-		New("UIFlexItem", {
-			FlexMode = Enum.UIFlexMode.Grow,
-			Parent = TopStatsContainer,
-		})
-		New("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Right,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 8),
-			Parent = TopStatsContainer,
-		})
-		New("UIPadding", {
-			PaddingTop = UDim.new(0, 10),
-			Parent = TopStatsContainer,
-		})
-
-		-- Badge helper
-		local function CreateBadge(Text)
-			local Badge = New("TextLabel", {
-				BackgroundColor3 = "MainColor",
-				BackgroundTransparency = 0.5,
-				Size = UDim2.new(0, 0, 0, 22),
-				AutomaticSize = Enum.AutomaticSize.X,
-				Text = Text,
-				TextSize = 11,
-				TextTransparency = 0.3,
-				Parent = TopStatsContainer,
-			})
-			New("UICorner", {
-				CornerRadius = UDim.new(0, 4),
-				Parent = Badge,
-			})
-			New("UIStroke", {
-				Color = "OutlineColor",
-				Thickness = 1,
-				Parent = Badge,
-			})
-			New("UIPadding", {
-				PaddingLeft = UDim.new(0, 8),
-				PaddingRight = UDim.new(0, 8),
-				Parent = Badge,
-			})
-			return Badge
-		end
-
-		local function ColorToHex(c)
-			return string.format("#%02X%02X%02X", math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
-		end
-		local AccentHex = ColorToHex(Library.Scheme.AccentColor)
-		-- Stats labels
-		local FPSBadge = CreateBadge("<font color='" .. AccentHex .. "'>FPS:</font> 0")
-		local PingBadge = CreateBadge("<font color='" .. AccentHex .. "'>Ping:</font> 0ms")
-		local ServerBadge =
-			CreateBadge("<font color='" .. AccentHex .. "'>Server:</font> V" .. tostring(game.PlaceVersion))
-
-		-- Auto-update FPS & Ping
-		coroutine.wrap(function()
-			local RunService = cloneref(game:GetService("RunService"))
-			local Stats = cloneref(game:GetService("Stats"))
-			local FrameCount = 0
-			local TimeCount = 0
-			while RunService.RenderStepped:Wait() do
-				FrameCount = FrameCount + 1
-				TimeCount = TimeCount + task.wait()
-				if TimeCount >= 0.5 then
-					local FPS = math.floor(FrameCount / TimeCount + 0.5)
-					FrameCount = 0
-					TimeCount = 0
-					pcall(function()
-						FPSBadge.Text = "<font color='" .. AccentHex .. "'>FPS:</font> " .. FPS
-						local Ping = math.floor((LocalPlayer:GetNetworkPing() or 0) * 1000 + 0.5)
-						PingBadge.Text = "<font color='" .. AccentHex .. "'>Ping:</font> " .. Ping .. "ms"
-					end)
-				end
-			end
-		end)()
-
-		--// Search Bar (Right side)
-		--// Search Bar (Frame container)
 		local SearchFrame = New("Frame", {
 			BackgroundColor3 = "MainColor",
-			Size = UDim2.new(0, 200, 0, 28),
+			Position = UDim2.fromScale(0, 0),
+			Size = UDim2.fromScale(1, 1),
 			Visible = not (WindowInfo.DisableSearch or false),
 			Parent = RightWrapper,
-		})
-		New("UIFlexItem", {
-			FlexMode = Enum.UIFlexMode.Shrink,
-			Parent = SearchFrame,
 		})
 		table.insert(
 			Library.Corners,
@@ -9478,7 +9578,7 @@ function Library:CreateWindow(WindowInfo)
 			Parent = SearchFrame,
 		})
 
-		--// Search Icon (kiri banget)
+		-- Icon Search Kiri
 		local SearchIcon = Library:GetIcon("search")
 		if SearchIcon then
 			New("ImageLabel", {
@@ -9489,41 +9589,27 @@ function Library:CreateWindow(WindowInfo)
 				ImageRectOffset = SearchIcon.ImageRectOffset,
 				ImageRectSize = SearchIcon.ImageRectSize,
 				ImageTransparency = 0.4,
-				Position = UDim2.new(0, 8, 0.5, 0),
-				Size = UDim2.fromOffset(16, 16),
+				Position = UDim2.new(0, 12, 0.5, 0),
+				Size = UDim2.fromOffset(18, 18),
 				Parent = SearchFrame,
 			})
 		end
 
-		--// Search TextBox
-		local SearchBox = New("TextBox", {
+		-- Input Search Tengah
+		SearchBox = New("TextBox", {
 			AnchorPoint = Vector2.new(0, 0.5),
 			BackgroundTransparency = 1,
 			PlaceholderText = "Search",
-			Position = UDim2.new(0, 30, 0.5, 0),
-			Size = UDim2.new(1, -38, 1, 0),
-			TextSize = 13,
+			Position = UDim2.new(0, 36, 0.5, 0),
+			Size = UDim2.new(1, -48, 1, 0),
+			TextSize = 14,
 			TextXAlignment = Enum.TextXAlignment.Center,
 			Parent = SearchFrame,
 		})
 
-		--// Search text changed
 		Library:GiveSignal(SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			Library:UpdateSearch(SearchBox.Text)
 		end))
-
-		--// Auto-hide badges on resize
-		local ResizeConn
-		ResizeConn = RightWrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-			local availWidth = RightWrapper.AbsoluteSize.X
-			local searchW = SearchBox.AbsoluteSize.X
-			local otherSpace = availWidth - searchW - 24
-
-			ServerBadge.Visible = otherSpace > 200
-			PingBadge.Visible = otherSpace > 120
-			FPSBadge.Visible = true
-		end)
-		table.insert(Library.Signals, ResizeConn)
 		if MoveIcon then
 			New("ImageLabel", {
 				AnchorPoint = Vector2.new(1, 0.5),
@@ -9840,7 +9926,7 @@ function Library:CreateWindow(WindowInfo)
 		DividerLine.Position = UDim2.fromOffset(Width, 0)
 
 		TitleHolder.Size = UDim2.new(0, Width, 1, 0)
-		RightWrapper.Size = UDim2.new(1, -Width - 57 - 1, 1, -16)
+		RightWrapper.Size = UDim2.new(1, -Width - 55, 0, 34)
 		Tabs.Size = UDim2.new(0, Width, 1, -70)
 		Container.Size = UDim2.new(1, -Width - 1, 1, -70)
 
@@ -9853,14 +9939,17 @@ function Library:CreateWindow(WindowInfo)
 	end
 
 	function Window:ShowTabInfo(Name, Description)
-		CurrentTabLabel.Text = Name
-		CurrentTabDescription.Text = Description
-
-		CurrentTabInfo.Visible = true
+		if CurrentTabInfo and CurrentTabLabel and CurrentTabDescription then
+			CurrentTabLabel.Text = Name
+			CurrentTabDescription.Text = Description
+			CurrentTabInfo.Visible = true
+		end
 	end
 
 	function Window:HideTabInfo()
-		CurrentTabInfo.Visible = false
+		if CurrentTabInfo then
+			CurrentTabInfo.Visible = false
+		end
 	end
 
 	function Window:AddTab(...)
@@ -11035,7 +11124,10 @@ function Library:CreateWindow(WindowInfo)
 		TabButton.MouseLeave:Connect(function()
 			Tab:Hover(false)
 		end)
-		TabButton.MouseButton1Click:Connect(Tab.Show)
+		TabButton.MouseButton1Click:Connect(function()
+			Library:PlayClickSound() -- <-- GANTI JADI INI
+			Tab:Show()
+		end)
 
 		Library.Tabs[Name] = Tab
 
@@ -12663,7 +12755,7 @@ function Library:CreateDashboardWindow(Info)
 		TxtIncome.Text = string.format('<font color="#57F287"><b>+$%s/s</b></font>', targetData.Income or "0")
 
 		local mutTag = (targetData.Mutation and targetData.Mutation ~= "")
-				and (' · <font color="#FFAA00">' .. targetData.Mutation .. "</font>")
+			and (' · <font color="#FFAA00">' .. targetData.Mutation .. "</font>")
 			or ""
 		TxtStats.Text =
 			string.format("%.2fx · %s Kg%s", targetData.Scale or 1, tostring(targetData.Weight or 0), mutTag)
@@ -12789,6 +12881,7 @@ function Library:CreateLoading(LoadingInfo)
 		Parent = ScreenGui,
 	})
 	Library:AddOutline(MainFrame)
+	
 	table.insert(
 		Library.Corners,
 		New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius), Parent = MainFrame })
