@@ -1,5 +1,3 @@
--- ini code baru
-
 local cloneref = (cloneref or clonereference or function(instance: any)
 	return instance
 end)
@@ -269,7 +267,7 @@ local Library = {
 		MainColor = Color3.fromRGB(40, 40, 40),
 		AccentColor = Color3.fromRGB(218, 98, 255),
 		OutlineColor = Color3.fromRGB(50, 50, 50),
-		FontColor = Color3.fromRGB(238, 238, 238),
+		FontColor = Color3.new(238, 238, 238),
 		Font = Font.fromEnum(Enum.Font.Code),
 
 		RedColor = Color3.fromRGB(255, 50, 50),
@@ -344,7 +342,7 @@ local Templates = {
 		FontFace = "Font",
 		PlaceholderColor3 = function()
 			local H, S, V = Library.Scheme.FontColor:ToHSV()
-			return Color3.fromHSV(H, S, math.clamp(V / 2, 0, 1))
+			return Color3.fromHSV(H, S, V / 2)
 		end,
 		Text = "",
 		TextColor3 = "FontColor",
@@ -1214,11 +1212,7 @@ function Library:GetCustomIcon(IconName: string): any
 		return LucideIcon
 	end
 
-	return {
-		Url = "",
-		ImageRectOffset = Vector2.zero,
-		ImageRectSize = Vector2.zero,
-	}
+	return nil
 end
 
 function Library:Validate(Table: { [string]: any }, Template: { [string]: any }): { [string]: any }
@@ -1428,27 +1422,6 @@ function Library:ChangeCursorIconSize(Size: UDim2)
 	CursorCustomImage.Size = Size
 end
 
---// SOUND ENGINE //--
-function Library:PlaySound(SoundId: string | number, Volume: number?, Pitch: number?)
-	task.spawn(function()
-		local id = tostring(SoundId)
-		if tonumber(id) then
-			id = "rbxassetid://" .. id
-		end
-		local sound = Instance.new("Sound")
-		sound.SoundId = id
-		sound.Volume = Volume or 1.5
-		sound.PlaybackSpeed = Pitch or 1
-		sound.PlayOnRemove = true
-		sound.Parent = SoundService
-		sound:Destroy()
-	end)
-end
-
-function Library:PlayClickSound()
-	Library:PlaySound("rbxassetid://9113876339", 1.2, 1)
-end
-
 function Library:GetBetterColor(Color: Color3, Add: number): Color3
 	Add = Add * (Library.IsLightTheme and -4 or 2)
 	return Color3.fromRGB(
@@ -1557,7 +1530,7 @@ end
 
 function GetNonOverlappingPosition(UI: GuiObject, StartPos: UDim2?)
 	local ScreenSize = (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080))
-	- Vector2.new(100, 100)
+		- Vector2.new(100, 100)
 	local Start = StartPos and Vector2.new(StartPos.X.Offset, StartPos.Y.Offset) or Vector2.new(6, 6)
 	local Padding = 6
 
@@ -2551,11 +2524,11 @@ function Library:AddContextMenu(
 			end
 
 			return true,
-			Library[string.format("%sTransitionInfo", AnimationType)] or TweenInfo.new(
-				0.18,
-				Enum.EasingStyle.Quad,
-				Enum.EasingDirection.Out
-			)
+				Library[string.format("%sTransitionInfo", AnimationType)] or TweenInfo.new(
+					0.18,
+					Enum.EasingStyle.Quad,
+					Enum.EasingDirection.Out
+				)
 		end,
 	}
 
@@ -2763,7 +2736,7 @@ Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input: InputObje
 			CurrentMenu
 			and not (
 				Library:MouseIsOverFrame(CurrentMenu.Menu, Location)
-					or Library:MouseIsOverFrame(CurrentMenu.Holder, Location)
+				or Library:MouseIsOverFrame(CurrentMenu.Holder, Location)
 			)
 		then
 			CurrentMenu:Close()
@@ -3161,7 +3134,7 @@ do
 			end
 
 			if SlideBackTween then
-				StopTween(SlideBackTween, true)
+				SlideForwardTween(SlideBackTween, true)
 				SlideBackTween = nil
 			end
 		end
@@ -3868,7 +3841,7 @@ do
 					and HoldingModifiers == true
 					and (
 						SpecialKeysInput[Input.UserInputType] == Key
-							or (Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == Key)
+						or (Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == Key)
 					)
 				then
 					HoldingKey = true
@@ -4501,126 +4474,90 @@ do
 	end
 
 	BaseAddons.__index = Funcs
+	BaseAddons.__namecall = function(_, Key, ...)
+		return Funcs[Key](...)
+	end
 end
 
 local BaseGroupbox = {}
 do
 	local Funcs = {}
 
-	--// MASTER 3D VIEWPORT (Full 360° Orbit, Pitch Atas-Bawah, Zoom In/Out & Touch Pinch)
+	--// GENERIC 3D VIEWPORT COMPONENT (MEWAH & BISA DIPUTAR 3D)
 	function Funcs:AddViewport(Idx, Info)
 		if self.Destroyed then
 			return nil
 		end
 
-		Info = Library:Validate(Info, Templates.Viewport)
-
 		local Groupbox = self
 		local Container = Groupbox.Container
 
-		local Dragging, Pinching = false, false
-		local LastMousePos = Vector2.zero
-		local LastPinchDist = 0
-
-		-- Sudut Kamera Orbit & Jarak Zoom
-		local AngleX = math.rad(15) -- Pitch (Kemiringan Atas/Bawah)
-		local AngleY = 0            -- Yaw (Putaran Kiri/Kanan)
-		local Distance = 10         -- Jarak Zoom
-		local TargetPosition = Vector3.zero
-
-		local CameraInstance = if not Info.Camera then Instance.new("Camera") else Info.Camera
-		CameraInstance.FieldOfView = 50
-
-		local Viewport = {
-			Connections = {},
-			Destroyed = false,
-
-			Object = nil,
-			Camera = CameraInstance,
-			Interactive = Info.Interactive or false,
-			AutoFocus = Info.AutoFocus ~= false,
-			Visible = Info.Visible ~= false,
-			Spin = Info.Spin ~= false,
-			Type = "Viewport",
-		}
-
-		local Holder = New("Frame", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, Info.Height or 160),
-			Visible = Viewport.Visible,
-			Parent = Container,
-		})
-
-		local Box = New("Frame", {
-			AnchorPoint = Vector2.new(0, 1),
+		local ViewportFrame = New("ViewportFrame", {
 			BackgroundColor3 = "MainColor",
-			Position = UDim2.fromScale(0, 1),
-			Size = UDim2.fromScale(1, 1),
-			Parent = Holder,
+			BackgroundTransparency = 0.5,
+			Size = UDim2.new(1, 0, 0, Info.Height or 140),
+			LightColor = Color3.fromRGB(255, 255, 255),
+			LightDirection = Vector3.new(-1, 2, -1),
+			Ambient = Color3.fromRGB(180, 180, 180),
+			Parent = Container,
 		})
 		table.insert(
 			Library.Corners,
 			New("UICorner", {
 				CornerRadius = UDim.new(0, Library.CornerRadius),
-				Parent = Box,
+				Parent = ViewportFrame,
 			})
 		)
 		New("UIStroke", {
 			Color = "OutlineColor",
 			Thickness = 1,
-			Parent = Box,
+			Parent = ViewportFrame,
 		})
 
-		local ViewportFrame = New("ViewportFrame", {
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			LightColor = Color3.fromRGB(255, 255, 255),
-			LightDirection = Vector3.new(-1, 2, -1),
-			Ambient = Color3.fromRGB(180, 180, 180),
-			CurrentCamera = Viewport.Camera,
-			Active = Viewport.Interactive,
-			Parent = Box,
-		})
-		Viewport.Camera.Parent = ViewportFrame
+		local Camera = Instance.new("Camera")
+		Camera.FieldOfView = 50
+		Camera.Parent = ViewportFrame
+		ViewportFrame.CurrentCamera = Camera
 
 		local WorldModel = Instance.new("WorldModel")
 		WorldModel.Parent = ViewportFrame
-		Viewport.WorldModel = WorldModel
 
-		-- Perhitungan Posisi Kamera Berdasarkan Sudut & Jarak
-		local function UpdateCamera()
-			if not Viewport.Camera then return end
-			local rotation = CFrame.Angles(0, AngleY, 0) * CFrame.Angles(AngleX, 0, 0)
-			Viewport.Camera.CFrame = CFrame.new(TargetPosition) * rotation * CFrame.new(0, 0, Distance)
-		end
+		local CurrentModel = nil
+		local AngleX = 0
+		local AngleY = 0
+		local Dragging = false
+		local LastMousePos = Vector2.zero
 
-		local function FocusCamera()
-			if not Viewport.Object then return end
-			local cf, size
-			if Viewport.Object:IsA("Model") then
-				cf, size = Viewport.Object:GetBoundingBox()
-			elseif Viewport.Object:IsA("BasePart") then
-				cf, size = Viewport.Object.CFrame, Viewport.Object.Size
-			else
+		local function AutoFocus(targetInstance)
+			if not targetInstance then
 				return
 			end
-			TargetPosition = cf.Position + Vector3.new(0, size.Y * 0.05, 0)
+			local cf, size
+			if targetInstance:IsA("Model") then
+				cf, size = targetInstance:GetBoundingBox()
+			else
+				cf, size = targetInstance.CFrame, targetInstance.Size
+			end
 			local maxDim = math.max(size.X, size.Y, size.Z)
-			Distance = math.max(maxDim / (2 * math.tan(math.rad(Viewport.Camera.FieldOfView / 2))) * 1.35, 3)
-			AngleX = math.rad(15)
-			UpdateCamera()
+			local dist = maxDim / (2 * math.tan(math.rad(Camera.FieldOfView / 2))) * 1.35
+			Camera.CFrame = CFrame.new(cf.Position + Vector3.new(0, size.Y * 0.1, dist), cf.Position)
 		end
 
-		function Viewport:Focus()
-			FocusCamera()
-		end
+		local ViewportObj = {
+			Frame = ViewportFrame,
+			Camera = Camera,
+			WorldModel = WorldModel,
+			Type = "Viewport",
+		}
 
-		function Viewport:SetObject(modelSource, Clone)
+		function ViewportObj:SetModel(modelSource)
 			WorldModel:ClearAllChildren()
-			Viewport.Object = nil
-			if not modelSource then return end
+			CurrentModel = nil
+			if not modelSource then
+				return
+			end
 
-			local clone = if Clone ~= false then modelSource:Clone() else modelSource
+			local clone = modelSource:Clone()
 			if clone:IsA("Model") or clone:IsA("BasePart") then
 				for _, desc in ipairs(clone:GetDescendants()) do
 					if desc:IsA("LuaSourceContainer") or desc:IsA("Sound") then
@@ -4635,145 +4572,78 @@ do
 				end
 
 				clone.Parent = WorldModel
-				Viewport.Object = clone
-				if Viewport.AutoFocus then
-					FocusCamera()
-				end
+				CurrentModel = clone
+				AutoFocus(clone)
 			end
 		end
 
-		function Viewport:SetModel(modelSource)
-			Viewport:SetObject(modelSource, true)
+		-- AUTO ROTATE & INTERACTIVE DRAG
+		local SpinConnection = nil
+		if Info.Spin ~= false then
+			SpinConnection = game:GetService("RunService").RenderStepped:Connect(function(dt)
+				if not Dragging and CurrentModel then
+					AngleY = (AngleY + dt * 40) % 360
+					local cf, _ = CurrentModel:IsA("Model") and CurrentModel:GetBoundingBox() or CurrentModel.CFrame
+					local dist = (Camera.CFrame.Position - cf.Position).Magnitude
+					local rad = math.rad(AngleY)
+					Camera.CFrame = CFrame.new(
+						cf.Position + Vector3.new(math.sin(rad) * dist, dist * 0.25, math.cos(rad) * dist),
+						cf.Position
+					)
+				end
+			end)
 		end
 
-		if Info.Object then
-			Viewport:SetObject(Info.Object, Info.Clone ~= false)
-		end
-
-		-- Auto-Spin Halus
-		local SpinConnection = RunService.RenderStepped:Connect(function(dt)
-			if Viewport.Spin and not Dragging and Viewport.Object then
-				AngleY = (AngleY + dt * 0.8) % (math.pi * 2)
-				UpdateCamera()
-			end
-		end)
-		table.insert(Viewport.Connections, SpinConnection)
-
-		-- Fitur Interaktif Orbit & Zoom
-		if Viewport.Interactive then
-			-- Matikan scrolling tab saat kursor masuk ke viewport (biar pas zoom, tab ga ikut scroll)
-			table.insert(Viewport.Connections, ViewportFrame.MouseEnter:Connect(function()
-				if Groupbox.Tab and Groupbox.Tab.Sides then
-					for _, Side in ipairs(Groupbox.Tab.Sides) do
-						Side.ScrollingEnabled = false
-					end
-				end
-			end))
-
-			table.insert(Viewport.Connections, ViewportFrame.MouseLeave:Connect(function()
-				if Groupbox.Tab and Groupbox.Tab.Sides then
-					for _, Side in ipairs(Groupbox.Tab.Sides) do
-						Side.ScrollingEnabled = true
-					end
-				end
-			end))
-
-			-- Deteksi Drag Mouse (Kiri & Kanan)
-			table.insert(Viewport.Connections, ViewportFrame.InputBegan:Connect(function(input)
-				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.Touch then
+		if Info.Interactive then
+			ViewportFrame.InputBegan:Connect(function(input)
+				if
+					input.UserInputType == Enum.UserInputType.MouseButton1
+					or input.UserInputType == Enum.UserInputType.Touch
+				then
 					Dragging = true
 					LastMousePos = Vector2.new(input.Position.X, input.Position.Y)
 				end
-			end))
-
-			table.insert(Viewport.Connections, UserInputService.InputEnded:Connect(function(input)
-				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.Touch then
+			end)
+			game:GetService("UserInputService").InputEnded:Connect(function(input)
+				if
+					input.UserInputType == Enum.UserInputType.MouseButton1
+					or input.UserInputType == Enum.UserInputType.Touch
+				then
 					Dragging = false
 				end
-			end))
-
-			-- Putar 360°: delta.X untuk kiri-kanan & delta.Y untuk atas-bawah
-			table.insert(Viewport.Connections, UserInputService.InputChanged:Connect(function(input)
-				if Dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			end)
+			game:GetService("UserInputService").InputChanged:Connect(function(input)
+				if
+					Dragging
+					and (
+						input.UserInputType == Enum.UserInputType.MouseMovement
+						or input.UserInputType == Enum.UserInputType.Touch
+					)
+				then
 					local curPos = Vector2.new(input.Position.X, input.Position.Y)
 					local delta = curPos - LastMousePos
 					LastMousePos = curPos
-
-					-- Kiri-Kanan (Yaw)
-					AngleY = (AngleY - math.rad(delta.X * 0.6)) % (math.pi * 2)
-
-					-- Atas-Bawah (Pitch) dengan batas clamp aman (-75° s/d +75°)
-					AngleX = math.clamp(AngleX - math.rad(delta.Y * 0.6), math.rad(-75), math.rad(75))
-
-					UpdateCamera()
+					AngleY = (AngleY - delta.X * 0.8) % 360
+					if CurrentModel then
+						local cf, _ = CurrentModel:IsA("Model") and CurrentModel:GetBoundingBox() or CurrentModel.CFrame
+						local dist = (Camera.CFrame.Position - cf.Position).Magnitude
+						local rad = math.rad(AngleY)
+						Camera.CFrame = CFrame.new(
+							cf.Position + Vector3.new(math.sin(rad) * dist, dist * 0.25, math.cos(rad) * dist),
+							cf.Position
+						)
+					end
 				end
-			end))
-
-			-- ZOOM IN / ZOOM OUT via MouseWheel
-			table.insert(Viewport.Connections, ViewportFrame.InputChanged:Connect(function(input)
-				if input.UserInputType == Enum.UserInputType.MouseWheel then
-					local zoomFactor = 1 - (input.Position.Z * 0.15)
-					Distance = math.clamp(Distance * zoomFactor, 1.5, 120)
-					UpdateCamera()
-				end
-			end))
-
-			-- ZOOM IN / ZOOM OUT via Touch Pinch (Mobile HP)
-			table.insert(Viewport.Connections, UserInputService.TouchPinch:Connect(function(touchPositions, scale, velocity, state)
-				if not Library:MouseIsOverFrame(ViewportFrame, touchPositions[1]) then return end
-
-				if state == Enum.UserInputState.Begin then
-					Pinching = true
-					Dragging = false
-					LastPinchDist = (touchPositions[1] - touchPositions[2]).Magnitude
-				elseif state == Enum.UserInputState.Change then
-					local curDist = (touchPositions[1] - touchPositions[2]).Magnitude
-					local delta = (curDist - LastPinchDist) * 0.05
-					LastPinchDist = curDist
-					Distance = math.clamp(Distance - delta, 1.5, 120)
-					UpdateCamera()
-				elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
-					Pinching = false
-				end
-			end))
-		end
-
-		function Viewport:SetHeight(Height: number)
-			Holder.Size = UDim2.new(1, 0, 0, Height)
-			Groupbox:Resize()
-		end
-
-		function Viewport:SetInteractive(Interactive: boolean)
-			Viewport.Interactive = Interactive
-			ViewportFrame.Active = Interactive
-		end
-
-		function Viewport:SetVisible(Visible: boolean)
-			Viewport.Visible = Visible
-			Holder.Visible = Viewport.Visible
-			Groupbox:Resize()
-		end
-
-		function Viewport:Destroy()
-			Viewport.Destroyed = true
-			if Viewport.Connections then
-				for _, c in ipairs(Viewport.Connections) do
-					if c and c.Connected then c:Disconnect() end
-				end
-			end
-			if Holder then Holder:Destroy() end
-			local ElemIdx = table.find(Groupbox.Elements, Viewport)
-			if ElemIdx then table.remove(Groupbox.Elements, ElemIdx) end
-			Groupbox:Resize()
-			if Idx then Options[Idx] = nil end
+			end)
 		end
 
 		Groupbox:Resize()
-		Viewport.Holder = Holder
-		table.insert(Groupbox.Elements, Viewport)
-		if Idx then Options[Idx] = Viewport end
+		table.insert(Groupbox.Elements, ViewportObj)
+		if Idx then
+			Options[Idx] = ViewportObj
+		end
 
-		return Viewport
+		return ViewportObj
 	end
 
 	--// SPOTLIGHT CARD: 3D VIEWPORT READY + CLEAN NEWLINE TEXT
@@ -5535,8 +5405,6 @@ do
 				if Button.Disabled or Button.Locked then
 					return
 				end
-				
-				Library:PlayClickSound()
 
 				if Button.DoubleClick then
 					Button.Locked = true
@@ -5561,10 +5429,6 @@ do
 				end
 
 				Library:SafeCallback(Button.Func)
-				
-				if Library.PulseWindowGlow then
-					Library:PulseWindowGlow()
-				end
 			end)
 		end
 
@@ -5939,18 +5803,9 @@ do
 
 			Library:UpdateDependencyBoxes()
 
-			--// MASUKKAN DI SINI (DI DALAM FUNGSI):
-			if Library.PulseWindowGlow then
-				Library:PulseWindowGlow()
-			end
-
 			if not Toggle.AnyKeyPickerPicking then
 				Toggle:RunChanged()
 			end
-		end
-		
-		if Library.PulseWindowGlow then
-			Library:PulseWindowGlow()
 		end
 
 		function Toggle:SetDisabled(Disabled: boolean)
@@ -5988,7 +5843,7 @@ do
 				if Toggle.Disabled then
 					return
 				end
-				Library:PlayClickSound() -- <-- TAMBAHKAN INI
+
 				Toggle:SetValue(not Toggle.Value)
 			end)
 		)
@@ -6225,11 +6080,6 @@ do
 
 			Library:UpdateDependencyBoxes()
 
-			--// MASUKKAN DI SINI JUGA (DI DALAM FUNGSI):
-			if Library.PulseWindowGlow then
-				Library:PulseWindowGlow()
-			end
-
 			if not Toggle.AnyKeyPickerPicking then
 				Toggle:RunChanged()
 			end
@@ -6270,7 +6120,7 @@ do
 				if Toggle.Disabled then
 					return
 				end
-				Library:PlayClickSound() -- <-- TAMBAHKAN INI
+
 				Toggle:SetValue(not Toggle.Value)
 			end)
 		)
@@ -7218,12 +7068,85 @@ do
 		)
 		Dropdown.Menu = MenuTable
 
-		--// [TEMPEL DI SINI] FUNGSI YANG HILANG SEBELUMNYA //--
+		function Dropdown:RecalculateListSize(Count)
+			local Y = math.clamp((Count or GetTableSize(Dropdown.Values)) * 21, 0, Info.MaxVisibleDropdownItems * 21)
+
+			MenuTable:SetSize(function()
+				return UDim2.fromOffset((DisplayContainer.AbsoluteSize.X / Library.DPIScale), Y)
+			end)
+		end
+
+		function Dropdown:UpdateColors()
+			if Library.Unloaded then
+				return
+			end
+
+			Label.TextTransparency = Dropdown.Disabled and 0.8 or 0
+			DisplayButton.TextTransparency = Dropdown.Disabled and 0.8 or 0
+			DisplayImage.ImageTransparency = Dropdown.Disabled and 0.8 or 0
+			ArrowImage.ImageTransparency = Dropdown.Disabled and 0.8 or MenuTable.Active and 0 or 0.5
+		end
+
+		function Dropdown:Display()
+			if Library.Unloaded then
+				return
+			end
+
+			local Str = ""
+			local ValueImage = nil
+
+			if Info.Multi then
+				for _, Value in Dropdown.Values do
+					if Dropdown.Value[Value] then
+						if not ValueImage then
+							ValueImage = GetValueImage(Value)
+						end
+
+						Str = Str
+							.. (Info.FormatDisplayValue and tostring(Info.FormatDisplayValue(Value)) or tostring(Value))
+							.. ", "
+					end
+				end
+
+				Str = Str:sub(1, #Str - 2)
+			else
+				ValueImage = GetValueImage(Dropdown.Value)
+				Str = Dropdown.Value and tostring(Dropdown.Value) or ""
+
+				if Str ~= "" and Info.FormatDisplayValue then
+					Str = tostring(Info.FormatDisplayValue(Str))
+				end
+			end
+
+			if #Str > 25 then
+				Str = Str:sub(1, 22) .. "..."
+			end
+
+			DisplayButton.Text = (Str == "" and "---" or Str)
+
+			if ValueImage then
+				DisplayImage.Image = ValueImage.Url
+				DisplayImage.ImageRectOffset = ValueImage.ImageRectOffset or Vector2.zero
+				DisplayImage.ImageRectSize = ValueImage.ImageRectSize or Vector2.zero
+				DisplayImage.ImageTransparency = 0
+			else
+				DisplayImage.Image = ""
+				DisplayImage.ImageTransparency = 1
+			end
+
+			DisplayButton.Size = ValueImage and UDim2.new(1, -8, 0, 21) or UDim2.new(1, 0, 0, 21)
+			DisplayButton.Position = ValueImage and UDim2.fromOffset(14, 0) or UDim2.fromOffset(0, 0)
+		end
+
+		function Dropdown:OnChanged(Func)
+			Dropdown.Changed = Func
+		end
+
 		function Dropdown:GetActiveValues(ReturnCount)
 			local Table = {}
 
 			if Info.Multi then
-				for Value, _ in pairs(Dropdown.Value or {}) do
+				for Value, _ in Dropdown.Value do
 					table.insert(Table, Value)
 				end
 			else
@@ -7235,148 +7158,163 @@ do
 			return ReturnCount == true and GetTableSize(Table) or Table
 		end
 
-		-- Hitung tinggi menu secara DINAMIS (21px untuk teks biasa, 36px HANYA jika ada gambar)
-		function Dropdown:RecalculateListSize(Count)
-			local HasImages = (Dropdown.ValueImages and next(Dropdown.ValueImages) ~= nil) 
-				or (Dropdown.SpecialType == "Player" and Dropdown.EnablePlayerImages == true)
-			local ItemHeight = HasImages and 36 or 21
+		local Buttons = {}
+		local DragSelecting = false
+		local DragStartIndex = nil
+		local DragInitialValues = {}
+		local DragInputEndedConn = nil
+		local DragInputChangedConn = nil
 
-			local Y = math.clamp((Count or GetTableSize(Dropdown.Values)) * ItemHeight, 0, (Info.MaxVisibleDropdownItems or 8) * ItemHeight)
+		local function StopDragSelect()
+			DragSelecting = false
+			DragStartIndex = nil
+			table.clear(DragInitialValues)
 
-			MenuTable:SetSize(function()
-				local w = 200
-				pcall(function()
-					local box = (MenuTable and MenuTable.Holder) or DisplayContainer or Display or Holder
-					if box and box.AbsoluteSize then
-						w = box.AbsoluteSize.X
-					end
-				end)
-				return UDim2.fromOffset(w / Library.DPIScale, Y)
-			end)
+			if DragInputEndedConn then
+				DragInputEndedConn:Disconnect()
+				DragInputEndedConn = nil
+			end
+
+			if DragInputChangedConn then
+				DragInputChangedConn:Disconnect()
+				DragInputChangedConn = nil
+			end
 		end
 
-		local ItemButtons = {}
+		local function UpdateDrag(CurrentIndex)
+			local Min = math.min(DragStartIndex, CurrentIndex)
+			local Max = math.max(DragStartIndex, CurrentIndex)
+
+			for OtherButton, OtherTable in Buttons do
+				local InRange = OtherTable.Index >= Min and OtherTable.Index <= Max
+				local Try = DragInitialValues[OtherTable.Value]
+				if InRange then
+					Try = not Try
+				end
+
+				if not (Dropdown:GetActiveValues(true) == 1 and not Try and not Info.AllowNull) then
+					Dropdown.Value[OtherTable.Value] = Try and true or nil
+				end
+
+				OtherTable:UpdateButton()
+			end
+
+			Dropdown:Display()
+		end
 
 		function Dropdown:BuildDropdownList()
 			local Values = Dropdown.Values
 			local DisabledValues = Dropdown.DisabledValues
 
-			local HasImages = (Dropdown.ValueImages and next(Dropdown.ValueImages) ~= nil) 
-				or (Dropdown.SpecialType == "Player" and Dropdown.EnablePlayerImages == true)
-			local ItemHeight = HasImages and 36 or 21
+			StopDragSelect()
 
-			-- Pembersih anti-dobel
-			for _, child in ipairs(MenuTable.Menu:GetChildren()) do
-				if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UICorner") and not child:IsA("UIStroke") then
-					child:Destroy()
+			for Button, _ in Buttons do
+				if not (Button and Button.Parent) then
+					continue
 				end
+
+				Button.Parent:Destroy()
 			end
-			table.clear(ItemButtons)
+			table.clear(Buttons)
 
 			local Count = 0
+			local ProcessedCount = 0
+			local TotalLen = GetTableSize(Values) + GetTableSize(DisabledValues)
+
 			for _, Value in Values do
+				ProcessedCount += 1
+
 				local FormattedValue = tostring(Info.FormatListValue and Info.FormatListValue(Value) or Value)
-				if SearchBox and not string.find(FormattedValue:lower(), SearchBox.Text:lower(), 1, true) then
+				if SearchBox and not FormattedValue:lower():match(SearchBox.Text:lower()) then
 					continue
 				end
 
 				Count += 1
+
 				local IsDisabled = table.find(DisabledValues, Value)
 				local Table = {}
 				local ValueImage = GetValueImage(Value)
 
-				-- ROW CONTAINER (21px jika teks biasa, 36px jika image)
-				local RowContainer = New("Frame", {
+				local Container = New("Frame", {
 					BackgroundColor3 = "MainColor",
 					BackgroundTransparency = 1,
 					LayoutOrder = IsDisabled and 1 or 0,
-					Size = UDim2.new(1, 0, 0, ItemHeight),
+					Size = UDim2.new(1, 0, 0, 21),
 					Parent = MenuTable.Menu,
 				})
 
-				local Button
-				local Image
+				if ProcessedCount == TotalLen then
+					local Corner = New("UICorner", {
+						TopLeftRadius = UDim.new(0, 0),
+						TopRightRadius = UDim.new(0, 0),
+						BottomRightRadius = UDim.new(0, Library.CornerRadius / 2),
+						BottomLeftRadius = UDim.new(0, Library.CornerRadius / 2),
+						Parent = Container,
+					})
+					table.insert(Library.SpecificCorners, Corner)
+				end
 
-				if HasImages and ValueImage then
-					Image = New("ImageLabel", {
-						BackgroundColor3 = "BackgroundColor",
-						BackgroundTransparency = 0.5,
+				local Image = ValueImage
+					and New("ImageLabel", {
+						BackgroundTransparency = 1,
 						Image = ValueImage.Url,
 						ImageRectOffset = ValueImage.ImageRectOffset,
 						ImageRectSize = ValueImage.ImageRectSize,
-						ImageTransparency = 0,
-						Size = UDim2.fromOffset(28, 28),
-						Position = UDim2.fromOffset(5, 4),
-						ScaleType = Enum.ScaleType.Fit,
-						Parent = RowContainer,
+						ImageTransparency = 0.5,
+						Size = UDim2.fromOffset(16, 16),
+						Position = UDim2.fromOffset(4, 3),
+						Parent = Container,
 					})
-					New("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Image })
-					New("UIStroke", { Color = "OutlineColor", Thickness = 1, Parent = Image })
 
-					Button = New("TextButton", {
-						BackgroundTransparency = 1,
-						Size = UDim2.new(1, -40, 0, 36),
-						Position = UDim2.fromOffset(40, 0),
-						Text = FormattedValue,
-						TextSize = 14,
-						Font = Enum.Font.GothamBold,
-						TextTransparency = 0.4,
-						TextXAlignment = Enum.TextXAlignment.Left,
-						Parent = RowContainer,
-					})
-					New("UIPadding", {
-						PaddingLeft = UDim.new(0, 4),
-						PaddingRight = UDim.new(0, 8),
-						Parent = Button,
-					})
-				else
-					Button = New("TextButton", {
-						BackgroundTransparency = 1,
-						Size = UDim2.new(1, 0, 0, 21),
-						Position = UDim2.fromOffset(0, 0),
-						Text = FormattedValue,
-						TextSize = 14,
-						TextTransparency = 0.5,
-						TextXAlignment = Enum.TextXAlignment.Left,
-						Parent = RowContainer,
-					})
-					New("UIPadding", {
-						PaddingLeft = UDim.new(0, 7),
-						PaddingRight = UDim.new(0, 7),
-						Parent = Button,
-					})
-				end
+				local Button = New("TextButton", {
+					BackgroundTransparency = 1,
+					Size = ValueImage and UDim2.new(1, -18, 0, 21) or UDim2.new(1, 0, 0, 21),
+					Position = ValueImage and UDim2.fromOffset(18, 0) or UDim2.fromOffset(0, 0),
+					Text = FormattedValue,
+					TextSize = 14,
+					TextTransparency = 0.5,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					Parent = Container,
+				})
+				New("UIPadding", {
+					PaddingLeft = UDim.new(0, 7),
+					PaddingRight = UDim.new(0, 7),
+					Parent = Button,
+				})
 
 				local Selected
 				if Info.Multi then
-					Selected = Dropdown.Value and Dropdown.Value[Value]
+					Selected = Dropdown.Value[Value]
 				else
 					Selected = Dropdown.Value == Value
 				end
 
 				function Table:UpdateButton()
 					if Info.Multi then
-						Selected = Dropdown.Value and Dropdown.Value[Value]
+						Selected = Dropdown.Value[Value]
 					else
 						Selected = Dropdown.Value == Value
 					end
 
-					RowContainer.BackgroundTransparency = Selected and 0 or 1
-					Button.TextTransparency = IsDisabled and 0.8 or Selected and 0 or 0.4
+					Container.BackgroundTransparency = Selected and 0 or 1
+					Button.TextTransparency = IsDisabled and 0.8 or Selected and 0 or 0.5
+
 					if Image then
-						Image.ImageTransparency = IsDisabled and 0.8 or Selected and 0 or 0.2
+						Image.ImageTransparency = IsDisabled and 0.8 or Selected and 0 or 0.5
 					end
 				end
 
-				if not IsDisabled then
-					local function SelectItem()
-						Library:PlayClickSound()
-						if Library.PulseWindowGlow then
-							Library:PulseWindowGlow()
-						end
-						local Try = not Selected
+				Table.Index = Count
+				Table.Value = Value
 
-						if not (Dropdown:GetActiveValues() == 1 and not Try and not Info.AllowNull) then
+				if not IsDisabled then
+					Button.MouseButton1Click:Connect(function()
+						if DragSelecting then
+							return
+						end
+
+						local Try = not Selected
+						if not (Dropdown:GetActiveValues(true) == 1 and not Try and not Info.AllowNull) then
 							Selected = Try
 							if Info.Multi then
 								Dropdown.Value[Value] = Selected and true or nil
@@ -7384,10 +7322,8 @@ do
 								Dropdown.Value = Selected and Value or nil
 							end
 
-							for _, OtherButton in pairs(ItemButtons) do
-								if OtherButton.UpdateButton then
-									OtherButton:UpdateButton()
-								end
+							for _, OtherButton in Buttons do
+								OtherButton:UpdateButton()
 							end
 						end
 
@@ -7395,26 +7331,77 @@ do
 						Dropdown:Display()
 
 						Library:UpdateDependencyBoxes()
-						Library:SafeCallback(Dropdown.Callback, Dropdown.Value)
-						Library:SafeCallback(Dropdown.Changed, Dropdown.Value)
-					end
+						Dropdown:RunChanged()
+					end)
 
-					Button.MouseButton1Click:Connect(SelectItem)
-					if Image then
-						local ImgBtn = Instance.new("TextButton")
-						ImgBtn.BackgroundTransparency = 1
-						ImgBtn.Size = UDim2.fromScale(1, 1)
-						ImgBtn.Text = ""
-						ImgBtn.Parent = Image
-						ImgBtn.MouseButton1Click:Connect(SelectItem)
+					if Info.Multi and Dropdown.DragSelect and not Library.IsMobile then
+						Button.InputBegan:Connect(function(StartInput)
+							if not IsMouseInput(StartInput) then
+								return
+							end
+
+							DragSelecting = true
+							DragStartIndex = Table.Index
+							table.clear(DragInitialValues)
+
+							for OtherButton, OtherTable in Buttons do
+								DragInitialValues[OtherTable.Value] = Dropdown.Value[OtherTable.Value]
+							end
+
+							UpdateDrag(Table.Index)
+
+							if DragInputEndedConn then
+								DragInputEndedConn:Disconnect()
+							end
+							if DragInputChangedConn then
+								DragInputChangedConn:Disconnect()
+							end
+
+							DragInputChangedConn =
+								Library:GiveSignal(UserInputService.InputChanged:Connect(function(ChangeInput)
+									if not IsMovementInput(ChangeInput) and ChangeInput ~= StartInput then
+										return
+									end
+
+									local Pos = ChangeInput.Position
+									for OtherButton, OtherTable in Buttons do
+										if Library:MouseIsOverFrame(OtherButton, Pos) then
+											UpdateDrag(OtherTable.Index)
+											break
+										end
+									end
+								end))
+
+							DragInputEndedConn =
+								Library:GiveSignal(UserInputService.InputEnded:Connect(function(EndInput)
+									if
+										EndInput ~= StartInput
+										and not (
+											IsMouseInput(EndInput)
+											and EndInput.UserInputType == StartInput.UserInputType
+										)
+									then
+										return
+									end
+
+									Library:UpdateDependencyBoxes()
+									Dropdown:RunChanged()
+
+									StopDragSelect()
+								end))
+
+							table.insert(Dropdown.Connections, DragInputEndedConn)
+							table.insert(Dropdown.Connections, DragInputChangedConn)
+						end)
 					end
 				end
 
 				Table:UpdateButton()
-				ItemButtons[Button] = Table
+				Dropdown:Display()
+
+				Buttons[Button] = Table
 			end
 
-			Dropdown:Display()
 			Dropdown:RecalculateListSize(Count)
 		end
 
@@ -7445,10 +7432,8 @@ do
 			end
 
 			Dropdown:Display()
-			for _, ItemBtn in pairs(ItemButtons) do
-				if ItemBtn.UpdateButton then
-					ItemBtn:UpdateButton()
-				end
+			for _, Button in Buttons do
+				Button:UpdateButton()
 			end
 
 			if not Dropdown.Disabled then
@@ -7526,74 +7511,6 @@ do
 			MenuTable:Close()
 			DisplayButton.Active = not Dropdown.Disabled
 			Dropdown:UpdateColors()
-			
-		end
-		
-		function Dropdown:UpdateColors()
-			if Library.Unloaded then
-				return
-			end
-
-			local btn = DisplayButton or DisplayContainer or Display
-			if Label then Label.TextTransparency = Dropdown.Disabled and 0.8 or 0 end
-			if btn then btn.TextTransparency = Dropdown.Disabled and 0.8 or 0 end
-			if DisplayImage then DisplayImage.ImageTransparency = Dropdown.Disabled and 0.8 or 0 end
-			if ArrowImage then ArrowImage.ImageTransparency = Dropdown.Disabled and 0.8 or (MenuTable and MenuTable.Active and 0 or 0.5) end
-		end
-
-		function Dropdown:Display()
-			if Library.Unloaded then
-				return
-			end
-
-			local Str = ""
-			local ValueImage = nil
-
-			if Info.Multi then
-				for _, Value in Dropdown.Values do
-					if Dropdown.Value[Value] then
-						if not ValueImage then
-							ValueImage = GetValueImage(Value)
-						end
-
-						Str = Str
-							.. (Info.FormatDisplayValue and tostring(Info.FormatDisplayValue(Value)) or tostring(Value))
-							.. ", "
-					end
-				end
-
-				Str = Str:sub(1, #Str - 2)
-			else
-				ValueImage = GetValueImage(Dropdown.Value)
-				Str = Dropdown.Value and tostring(Dropdown.Value) or ""
-
-				if Str ~= "" and Info.FormatDisplayValue then
-					Str = tostring(Info.FormatDisplayValue(Str))
-				end
-			end
-
-			if #Str > 25 then
-				Str = Str:sub(1, 22) .. "..."
-			end
-
-			local btn = DisplayButton or DisplayContainer or Display
-			if btn then
-				btn.Text = (Str == "" and "---" or Str)
-				btn.Size = ValueImage and UDim2.new(1, -8, 0, 21) or UDim2.new(1, 0, 0, 21)
-				btn.Position = ValueImage and UDim2.fromOffset(14, 0) or UDim2.fromOffset(0, 0)
-			end
-
-			if DisplayImage then
-				if ValueImage then
-					DisplayImage.Image = ValueImage.Url
-					DisplayImage.ImageRectOffset = ValueImage.ImageRectOffset or Vector2.zero
-					DisplayImage.ImageRectSize = ValueImage.ImageRectSize or Vector2.zero
-					DisplayImage.ImageTransparency = 0
-				else
-					DisplayImage.Image = ""
-					DisplayImage.ImageTransparency = 1
-				end
-			end
 		end
 
 		function Dropdown:SetVisible(Visible: boolean)
@@ -7624,7 +7541,7 @@ do
 			if Dropdown.Disabled then
 				return
 			end
-			Library:PlayClickSound() -- <-- TAMBAHKAN INI
+
 			MenuTable:Toggle()
 		end
 
@@ -7691,9 +7608,7 @@ do
 		function Dropdown:Destroy()
 			Dropdown.Destroyed = true
 
-			if typeof(StopDragSelect) == "function" then
-				StopDragSelect()
-			end
+			StopDragSelect()
 
 			if Dropdown.Connections then
 				for _, Connection in Dropdown.Connections do
@@ -7725,7 +7640,7 @@ do
 		return Dropdown
 	end
 
-	function Funcs:AddSimpleViewport(Idx, Info)
+	function Funcs:AddViewport(Idx, Info)
 		if self.Destroyed then
 			return nil
 		end
@@ -7761,12 +7676,10 @@ do
 			Type = "Viewport",
 		}
 
-		if Viewport.Object ~= nil then
-			assert(
-				typeof(Viewport.Object) == "Instance" and (Viewport.Object:IsA("BasePart") or Viewport.Object:IsA("Model")),
-				"Instance must be a BasePart or Model."
-			)
-		end
+		assert(
+			typeof(Viewport.Object) == "Instance" and (Viewport.Object:IsA("BasePart") or Viewport.Object:IsA("Model")),
+			"Instance must be a BasePart or Model."
+		)
 
 		assert(
 			typeof(Viewport.Camera) == "Instance" and Viewport.Camera:IsA("Camera"),
@@ -7959,12 +7872,9 @@ do
 				end
 			end)
 		);
-		
-		if Viewport.Object then
-			(Viewport.Object :: PVInstance).Parent = ViewportFrame
-			if Viewport.AutoFocus then
-				FocusCamera()
-			end
+		(Viewport.Object :: PVInstance).Parent = ViewportFrame
+		if Viewport.AutoFocus then
+			FocusCamera()
 		end
 
 		function Viewport:SetObject(Object: Instance, Clone: boolean?)
@@ -8765,153 +8675,11 @@ do
 
 		return DepGroupbox
 	end
-	
-	--// RICH PLAYER STATUS CARD (Multi-Line: Avatar + Rarity + Rate + Progress) \\--
-	function Funcs:AddPlayerStatusCard(Idx, Info)
-		local Groupbox = self
-		local Container = Groupbox.Container
-
-		local CardHolder = New("Frame", {
-			BackgroundColor3 = "MainColor",
-			BackgroundTransparency = 0.35,
-			Size = UDim2.new(1, 0, 0, 84),
-			Parent = Container,
-		})
-		table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, Library.CornerRadius), Parent = CardHolder }))
-		Library:AddOutline(CardHolder)
-
-		-- Avatar Headshot di Kiri
-		local AvatarImg = New("ImageLabel", {
-			BackgroundColor3 = "BackgroundColor",
-			Position = UDim2.fromOffset(8, 8),
-			Size = UDim2.fromOffset(68, 68),
-			Image = "",
-			Parent = CardHolder,
-		})
-		New("UICorner", { CornerRadius = UDim.new(0, 8), Parent = AvatarImg })
-		New("UIStroke", { Color = "OutlineColor", Thickness = 1, Parent = AvatarImg })
-
-		-- Load Avatar Headshot Player Otomatis
-		local userId = Info.UserId or (Info.Player and Info.Player.UserId) or Library.LocalPlayer.UserId
-		task.spawn(function()
-			local thumb = Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-			if AvatarImg and AvatarImg.Parent then
-				AvatarImg.Image = thumb
-			end
-		end)
-
-		-- Container Teks Kanan
-		local RightInfo = New("Frame", {
-			BackgroundTransparency = 1,
-			Position = UDim2.fromOffset(84, 6),
-			Size = UDim2.new(1, -92, 1, -12),
-			Parent = CardHolder,
-		})
-		New("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, Padding = UDim.new(0, 2), Parent = RightInfo })
-
-		-- Baris 1: Nama Player
-		local NameLabel = New("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 16),
-			Text = Info.Name or Library.LocalPlayer.DisplayName,
-			Font = Enum.Font.GothamBold,
-			TextSize = 14,
-			TextColor3 = Color3.fromRGB(255, 255, 255),
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			Parent = RightInfo,
-		})
-
-		-- Baris 2: Rarity / Title Badge
-		local RarityLabel = New("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 14),
-			Text = Info.Rarity or "Mythic Tier",
-			Font = Enum.Font.GothamBold,
-			TextSize = 11,
-			RichText = true,
-			TextColor3 = Info.RarityColor or Library.Scheme.AccentColor,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = RightInfo,
-		})
-
-		-- Baris 3: Rate / Speed
-		local StatLabel = New("TextLabel", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 14),
-			Text = Info.StatText or "Rate: +25m/s",
-			Font = Enum.Font.Gotham,
-			TextSize = 11,
-			RichText = true,
-			TextColor3 = Color3.fromRGB(87, 242, 135),
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = RightInfo,
-		})
-
-		-- Baris 4: Progress Bar + Persentase
-		local ProgFrame = New("Frame", {
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 12),
-			Parent = RightInfo,
-		})
-
-		local BarTrack = New("Frame", {
-			BackgroundColor3 = "BackgroundColor",
-			Position = UDim2.fromOffset(0, 2),
-			Size = UDim2.new(1, -38, 0, 8),
-			Parent = ProgFrame,
-		})
-		New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = BarTrack })
-
-		local BarFill = New("Frame", {
-			BackgroundColor3 = "AccentColor",
-			Size = UDim2.fromScale(math.clamp((Info.Progress or 23) / 100, 0, 1), 1),
-			Parent = BarTrack,
-		})
-		New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = BarFill })
-
-		local PercentLabel = New("TextLabel", {
-			BackgroundTransparency = 1,
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, 0, 0.5, 0),
-			Size = UDim2.fromOffset(34, 12),
-			Text = tostring(Info.Progress or 23) .. "%",
-			Font = Enum.Font.GothamBold,
-			TextSize = 10,
-			TextColor3 = Color3.fromRGB(200, 200, 210),
-			TextXAlignment = Enum.TextXAlignment.Right,
-			Parent = ProgFrame,
-		})
-
-		local CardObj = {
-			Holder = CardHolder,
-			Avatar = AvatarImg,
-			NameLabel = NameLabel,
-			RarityLabel = RarityLabel,
-			StatLabel = StatLabel,
-			BarFill = BarFill,
-			PercentLabel = PercentLabel,
-			Type = "PlayerStatusCard",
-		}
-
-		function CardObj:SetData(data)
-			if data.Name then NameLabel.Text = data.Name end
-			if data.Rarity then RarityLabel.Text = data.Rarity end
-			if data.StatText then StatLabel.Text = data.StatText end
-			if data.Progress then
-				local p = math.clamp(data.Progress, 0, 100)
-				PercentLabel.Text = tostring(p) .. "%"
-				TweenService:Create(BarFill, TweenInfo.new(0.3), { Size = UDim2.fromScale(p / 100, 1) }):Play()
-			end
-		end
-
-		Groupbox:Resize()
-		table.insert(Groupbox.Elements, CardObj)
-		if Idx then Options[Idx] = CardObj end
-		return CardObj
-	end
 
 	BaseGroupbox.__index = Funcs
+	BaseGroupbox.__namecall = function(_, Key, ...)
+		return Funcs[Key](...)
+	end
 end
 
 function Library:SetFont(FontFace)
@@ -8993,7 +8761,7 @@ function Library:Notify(...)
 		Data.DescriptionColor = Info.DescriptionColor
 
 		Data.Time = Info.Time or 5
-		Data.SoundId = Info.SoundId or "rbxassetid://92972986635552"
+		Data.SoundId = Info.SoundId
 		Data.Steps = Info.Steps
 		Data.Persist = Info.Persist
 
@@ -9005,7 +8773,7 @@ function Library:Notify(...)
 	else
 		Data.Description = tostring(Info)
 		Data.Time = select(2, ...) or 5
-		Data.SoundId = select(3, ...) or "rbxassetid://92972986635552"
+		Data.SoundId = select(3, ...)
 		Data.Volume = select(4, ...) or 3
 	end
 	Data.Destroyed = false
@@ -9436,218 +9204,6 @@ function Library:CreateWindow(WindowInfo)
 			})
 		)
 		Library:AddOutline(MainFrame)
-		
-		--// 1. NEON BORDER WINDOW LUAR (KETEBALAN KONSTAN 1.8px) \\--
-		local MainStroke = New("UIStroke", {
-			Name = "NeonWindowStroke",
-			Color = "AccentColor",
-			Thickness = 1.8,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			Parent = MainFrame,
-		})
-
-		--// INNER LASER CONTAINER (DEFAULT 100% MATI / BERSIH SAAT NORMAL) \\--
-		local InnerBorderFrame = New("Frame", {
-			Name = "InnerCollisionLaser",
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundTransparency = 1,
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.new(1, -2, 1, -2),
-			ZIndex = MainFrame.ZIndex + 2,
-			Visible = false,
-			Parent = MainFrame,
-		})
-		table.insert(
-			Library.Corners,
-			New("UICorner", {
-				CornerRadius = UDim.new(0, math.max(0, WindowInfo.CornerRadius - 1)),
-				Parent = InnerBorderFrame,
-			})
-		)
-
-		local InnerStroke = New("UIStroke", {
-			Color = Color3.fromRGB(255, 255, 255),
-			Thickness = 1.4,
-			Transparency = 1,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			Parent = InnerBorderFrame,
-		})
-
-		local InnerGrad = Instance.new("UIGradient")
-		InnerGrad.Rotation = -45
-		InnerGrad.Parent = InnerStroke
-
-		--// 2. 6-LAYER GLOW RAMPING LUAR \\--
-		local GlowLayers = {
-			{ Thickness = 1, Transparency = 0.15 },
-			{ Thickness = 1.5, Transparency = 0.35 },
-			{ Thickness = 2, Transparency = 0.55 },
-			{ Thickness = 3, Transparency = 0.72 },
-			{ Thickness = 4.5, Transparency = 0.85 },
-			{ Thickness = 6.5, Transparency = 0.94 },
-		}
-
-		local OuterStrokes = { MainStroke }
-
-		for i, layer in ipairs(GlowLayers) do
-			local GlowFrame = New("Frame", {
-				Name = "ChiyoGlowLayer_" .. i,
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				BackgroundTransparency = 1,
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.new(1, layer.Thickness * 2, 1, layer.Thickness * 2),
-				ZIndex = MainFrame.ZIndex - i,
-				Parent = MainFrame,
-			})
-			table.insert(
-				Library.Corners,
-				New("UICorner", {
-					CornerRadius = UDim.new(0, WindowInfo.CornerRadius + layer.Thickness),
-					Parent = GlowFrame,
-				})
-			)
-			local Stroke = New("UIStroke", {
-				Color = "AccentColor",
-				Thickness = layer.Thickness,
-				Transparency = layer.Transparency,
-				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-				Parent = GlowFrame,
-			})
-			table.insert(OuterStrokes, Stroke)
-		end
-
-		local OuterGradients = {}
-		for _, stroke in ipairs(OuterStrokes) do
-			local Grad = Instance.new("UIGradient")
-			Grad.Rotation = -45
-			Grad.Parent = stroke
-			table.insert(OuterGradients, Grad)
-		end
-
-		-- PALET WARNA DASAR
-		local CyanBlue = Color3.fromRGB(0, 220, 255)
-		local RadiantGold = Color3.fromRGB(255, 210, 30)
-		local PureWhite = Color3.fromRGB(255, 255, 255)
-
-		local function GetSolidSequence(accentColor)
-			return ColorSequence.new(accentColor, accentColor)
-		end
-
-		-- Set warna awal
-		for _, grad in ipairs(OuterGradients) do
-			grad.Color = GetSolidSequence(Library.Scheme.AccentColor)
-		end
-
-		--// 3. FLUID LERP ENGINE: SATU ALIRAN PENUH TANPA JEDA & TANPA KEJUT \\--
-		local PulseGeneration = 0
-
-		function Library:PulseWindowGlow()
-			if Library.Unloaded or not MainFrame or not MainFrame.Parent or not Library.Toggled then
-				return
-			end
-
-			PulseGeneration = PulseGeneration + 1
-			local curGen = PulseGeneration
-
-			task.spawn(function()
-				local curAccent = Library.Scheme.AccentColor
-				InnerBorderFrame.Visible = true
-
-				-- Nilai timeline animasi dari 0.00 sampai 1.00 dalam satu tarikan halus
-				local timeline = Instance.new("NumberValue")
-				timeline.Value = 0
-
-				-- Durasi 1.2 detik (sangat pas, mengalir natural)
-				local animTween = TweenService:Create(
-					timeline,
-					TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-					{ Value = 1.0 }
-				)
-
-				local animConn = timeline:GetPropertyChangedSignal("Value"):Connect(function()
-					local t = timeline.Value
-
-					if t < 0.60 then
-						-- [FASE 1]: Merambat dari kedua pojok saling mendekat (t = 0.0 s/d 0.60)
-						local crawl = t / 0.60
-						local reach = math.clamp(0.03 + crawl * 0.46, 0.03, 0.49)
-
-						-- Transparansi sinar dalam fade in lembut
-						InnerStroke.Transparency = math.clamp(1 - (t / 0.15) * 0.9, 0.1, 1)
-
-						local seq = ColorSequence.new({
-							ColorSequenceKeypoint.new(0.00, PureWhite),
-							ColorSequenceKeypoint.new(math.clamp(reach * 0.5, 0.01, 0.24), RadiantGold),
-							ColorSequenceKeypoint.new(reach, curAccent),
-							ColorSequenceKeypoint.new(math.clamp(1.00 - reach, 0.51, 0.98), curAccent),
-							ColorSequenceKeypoint.new(math.clamp(1.00 - reach * 0.5, 0.76, 0.99), CyanBlue),
-							ColorSequenceKeypoint.new(1.00, PureWhite),
-						})
-
-						for _, grad in ipairs(OuterGradients) do
-							if grad and grad.Parent then grad.Color = seq end
-						end
-						InnerGrad.Color = seq
-
-					else
-						-- [FASE 2]: KETEMU DI TENGAH & LANGSUNG MELEBUR HILANG (t = 0.60 s/d 1.0)
-						-- TANPA JEDA! Langsung mencair balik ke ungu/pink aslinya!
-						local dissolve = (t - 0.60) / 0.40 -- Progress melebur dari 0 ke 1
-
-						-- Sinar dalam window ikut memudar lembut
-						InnerStroke.Transparency = math.clamp(0.1 + dissolve * 0.9, 0.1, 1)
-
-						-- Lerp warna: Biru, Emas, dan Putih perlahan mencair menyatu ke curAccent
-						local goldFade = RadiantGold:Lerp(curAccent, dissolve)
-						local blueFade = CyanBlue:Lerp(curAccent, dissolve)
-						local whiteCenter = PureWhite:Lerp(curAccent, dissolve)
-
-						local seq = ColorSequence.new({
-							ColorSequenceKeypoint.new(0.00, whiteCenter),
-							ColorSequenceKeypoint.new(0.24, goldFade),
-							ColorSequenceKeypoint.new(0.48, whiteCenter),
-							ColorSequenceKeypoint.new(0.52, whiteCenter),
-							ColorSequenceKeypoint.new(0.76, blueFade),
-							ColorSequenceKeypoint.new(1.00, whiteCenter),
-						})
-
-						for _, grad in ipairs(OuterGradients) do
-							if grad and grad.Parent then grad.Color = seq end
-						end
-						InnerGrad.Color = seq
-					end
-				end)
-
-				animTween:Play()
-				animTween.Completed:Wait()
-				animConn:Disconnect()
-				timeline:Destroy()
-
-				-- [SELESAI]: Window 100% bersih & kembali ke ungu solid normal
-				if curGen == PulseGeneration then
-					InnerBorderFrame.Visible = false
-					InnerStroke.Transparency = 1
-
-					local solidSeq = GetSolidSequence(Library.Scheme.AccentColor)
-					for _, grad in ipairs(OuterGradients) do
-						if grad and grad.Parent then
-							grad.Color = solidSeq
-						end
-					end
-				end
-			end)
-		end
-
-		-- Background loop setiap 25 detik saat diam
-		coroutine.wrap(function()
-			while not Library.Unloaded and MainFrame and MainFrame.Parent do
-				task.wait(25)
-				if Library.Toggled and MainFrame.Visible then
-					Library:PulseWindowGlow()
-				end
-			end
-		end)()
-		
 		Library:MakeLine(MainFrame, {
 			Position = UDim2.fromOffset(0, 48),
 			Size = UDim2.new(1, 0, 0, 1),
@@ -9749,21 +9305,166 @@ function Library:CreateWindow(WindowInfo)
 			Parent = TitleHolder,
 		})
 
-		--// Top Right Bar (Search Bar Panjang Lebar Penuh Ala Chiyo) \\--
+		--// Top Right Bar \\--
 		RightWrapper = New("Frame", {
 			AnchorPoint = Vector2.new(1, 0.5),
 			BackgroundTransparency = 1,
-			Position = UDim2.new(1, -44, 0.5, 0),
-			Size = UDim2.new(1, -InitialLeftWidth - 55, 0, 34), -- Makin tebal & lega atas-bawah
+			Position = UDim2.new(1, -49, 0.5, 0),
+			Size = UDim2.new(1, -InitialLeftWidth - 57 - 1, 1, -16),
 			Parent = TopBar,
 		})
 
+		New("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 8),
+			Parent = RightWrapper,
+		})
+
+		CurrentTabInfo = New("Frame", {
+			Size = UDim2.fromScale(WindowInfo.DisableSearch and 1 or 0.5, 1),
+			Visible = false,
+			BackgroundTransparency = 1,
+			Parent = RightWrapper,
+		})
+
+		New("UIFlexItem", {
+			FlexMode = Enum.UIFlexMode.Grow,
+			Parent = CurrentTabInfo,
+		})
+
+		New("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Parent = CurrentTabInfo,
+		})
+
+		New("UIPadding", {
+			PaddingBottom = UDim.new(0, 8),
+			PaddingLeft = UDim.new(0, 8),
+			PaddingRight = UDim.new(0, 8),
+			PaddingTop = UDim.new(0, 8),
+			Parent = CurrentTabInfo,
+		})
+
+		CurrentTabLabel = New("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Text = "",
+			TextSize = 14,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = CurrentTabInfo,
+		})
+
+		CurrentTabDescription = New("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Text = "",
+			TextWrapped = true,
+			TextSize = 14,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTransparency = 0.5,
+			Parent = CurrentTabInfo,
+		})
+
+		--// Top Bar Stats
+		TopStatsContainer = New("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(0, 0, 1, 0),
+			Parent = RightWrapper,
+		})
+		New("UIFlexItem", {
+			FlexMode = Enum.UIFlexMode.Grow,
+			Parent = TopStatsContainer,
+		})
+		New("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 8),
+			Parent = TopStatsContainer,
+		})
+		New("UIPadding", {
+			PaddingTop = UDim.new(0, 10),
+			Parent = TopStatsContainer,
+		})
+
+		-- Badge helper
+		local function CreateBadge(Text)
+			local Badge = New("TextLabel", {
+				BackgroundColor3 = "MainColor",
+				BackgroundTransparency = 0.5,
+				Size = UDim2.new(0, 0, 0, 22),
+				AutomaticSize = Enum.AutomaticSize.X,
+				Text = Text,
+				TextSize = 11,
+				TextTransparency = 0.3,
+				Parent = TopStatsContainer,
+			})
+			New("UICorner", {
+				CornerRadius = UDim.new(0, 4),
+				Parent = Badge,
+			})
+			New("UIStroke", {
+				Color = "OutlineColor",
+				Thickness = 1,
+				Parent = Badge,
+			})
+			New("UIPadding", {
+				PaddingLeft = UDim.new(0, 8),
+				PaddingRight = UDim.new(0, 8),
+				Parent = Badge,
+			})
+			return Badge
+		end
+
+		local function ColorToHex(c)
+			return string.format("#%02X%02X%02X", math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
+		end
+		local AccentHex = ColorToHex(Library.Scheme.AccentColor)
+		-- Stats labels
+		local FPSBadge = CreateBadge("<font color='" .. AccentHex .. "'>FPS:</font> 0")
+		local PingBadge = CreateBadge("<font color='" .. AccentHex .. "'>Ping:</font> 0ms")
+		local ServerBadge =
+			CreateBadge("<font color='" .. AccentHex .. "'>Server:</font> V" .. tostring(game.PlaceVersion))
+
+		-- Auto-update FPS & Ping
+		coroutine.wrap(function()
+			local RunService = cloneref(game:GetService("RunService"))
+			local Stats = cloneref(game:GetService("Stats"))
+			local FrameCount = 0
+			local TimeCount = 0
+			while RunService.RenderStepped:Wait() do
+				FrameCount = FrameCount + 1
+				TimeCount = TimeCount + task.wait()
+				if TimeCount >= 0.5 then
+					local FPS = math.floor(FrameCount / TimeCount + 0.5)
+					FrameCount = 0
+					TimeCount = 0
+					pcall(function()
+						FPSBadge.Text = "<font color='" .. AccentHex .. "'>FPS:</font> " .. FPS
+						local Ping = math.floor((LocalPlayer:GetNetworkPing() or 0) * 1000 + 0.5)
+						PingBadge.Text = "<font color='" .. AccentHex .. "'>Ping:</font> " .. Ping .. "ms"
+					end)
+				end
+			end
+		end)()
+
+		--// Search Bar (Right side)
+		--// Search Bar (Frame container)
 		local SearchFrame = New("Frame", {
 			BackgroundColor3 = "MainColor",
-			Position = UDim2.fromScale(0, 0),
-			Size = UDim2.fromScale(1, 1),
+			Size = UDim2.new(0, 200, 0, 28),
 			Visible = not (WindowInfo.DisableSearch or false),
 			Parent = RightWrapper,
+		})
+		New("UIFlexItem", {
+			FlexMode = Enum.UIFlexMode.Shrink,
+			Parent = SearchFrame,
 		})
 		table.insert(
 			Library.Corners,
@@ -9777,7 +9478,7 @@ function Library:CreateWindow(WindowInfo)
 			Parent = SearchFrame,
 		})
 
-		--// Search Icon (Kiri)
+		--// Search Icon (kiri banget)
 		local SearchIcon = Library:GetIcon("search")
 		if SearchIcon then
 			New("ImageLabel", {
@@ -9788,28 +9489,41 @@ function Library:CreateWindow(WindowInfo)
 				ImageRectOffset = SearchIcon.ImageRectOffset,
 				ImageRectSize = SearchIcon.ImageRectSize,
 				ImageTransparency = 0.4,
-				Position = UDim2.new(0, 12, 0.5, 0),
-				Size = UDim2.fromOffset(18, 18), -- Dari 16 jadi 18 biar gagah
+				Position = UDim2.new(0, 8, 0.5, 0),
+				Size = UDim2.fromOffset(16, 16),
 				Parent = SearchFrame,
 			})
 		end
 
-		--// Search Input Box
-		SearchBox = New("TextBox", {
+		--// Search TextBox
+		local SearchBox = New("TextBox", {
 			AnchorPoint = Vector2.new(0, 0.5),
 			BackgroundTransparency = 1,
 			PlaceholderText = "Search",
-			Position = UDim2.new(0, 36, 0.5, 0),
-			Size = UDim2.new(1, -48, 1, 0),
-			TextSize = 14, -- Font naik dikit ke 14 biar pas sama kotak
+			Position = UDim2.new(0, 30, 0.5, 0),
+			Size = UDim2.new(1, -38, 1, 0),
+			TextSize = 13,
 			TextXAlignment = Enum.TextXAlignment.Center,
 			Parent = SearchFrame,
 		})
 
+		--// Search text changed
 		Library:GiveSignal(SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			Library:UpdateSearch(SearchBox.Text)
 		end))
-		
+
+		--// Auto-hide badges on resize
+		local ResizeConn
+		ResizeConn = RightWrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			local availWidth = RightWrapper.AbsoluteSize.X
+			local searchW = SearchBox.AbsoluteSize.X
+			local otherSpace = availWidth - searchW - 24
+
+			ServerBadge.Visible = otherSpace > 200
+			PingBadge.Visible = otherSpace > 120
+			FPSBadge.Visible = true
+		end)
+		table.insert(Library.Signals, ResizeConn)
 		if MoveIcon then
 			New("ImageLabel", {
 				AnchorPoint = Vector2.new(1, 0.5),
@@ -10126,7 +9840,7 @@ function Library:CreateWindow(WindowInfo)
 		DividerLine.Position = UDim2.fromOffset(Width, 0)
 
 		TitleHolder.Size = UDim2.new(0, Width, 1, 0)
-		RightWrapper.Size = UDim2.new(1, -Width - 55, 0, 34)
+		RightWrapper.Size = UDim2.new(1, -Width - 57 - 1, 1, -16)
 		Tabs.Size = UDim2.new(0, Width, 1, -70)
 		Container.Size = UDim2.new(1, -Width - 1, 1, -70)
 
@@ -10138,8 +9852,16 @@ function Library:CreateWindow(WindowInfo)
 		end
 	end
 
-	function Window:ShowTabInfo(Name, Description) end
-	function Window:HideTabInfo() end
+	function Window:ShowTabInfo(Name, Description)
+		CurrentTabLabel.Text = Name
+		CurrentTabDescription.Text = Description
+
+		CurrentTabInfo.Visible = true
+	end
+
+	function Window:HideTabInfo()
+		CurrentTabInfo.Visible = false
+	end
 
 	function Window:AddTab(...)
 		local Name = nil
@@ -10623,22 +10345,50 @@ function Library:CreateWindow(WindowInfo)
 				})
 				table.insert(Library.SpecificCorners, ButtonCorner)
 
-				-- MURNI IMAGE ICON DI TENGAH (TIDAK ADA TEXTLABEL LAGI!)
-				local BoxIcon = Library:GetCustomIcon(IconName)
-				local IconAsset = (BoxIcon and BoxIcon.Url ~= "") and BoxIcon.Url or "rbxassetid://95816097006870"
-
-				local ButtonIcon = New("ImageLabel", {
-					Image = IconAsset,
-					ImageColor3 = (BoxIcon and BoxIcon.Custom) and "WhiteColor" or "AccentColor",
-					ImageRectOffset = BoxIcon and BoxIcon.ImageRectOffset or Vector2.zero,
-					ImageRectSize = BoxIcon and BoxIcon.ImageRectSize or Vector2.zero,
-					ImageTransparency = 0.5,
+				local ButtonContent = New("Frame", {
 					AnchorPoint = Vector2.new(0.5, 0.5),
-					Position = UDim2.fromScale(0.5, 0.5),
-					Size = UDim2.fromOffset(20, 20),
+					AutomaticSize = Enum.AutomaticSize.X,
 					BackgroundTransparency = 1,
+					Position = UDim2.fromScale(0.5, 0.5),
+					Size = UDim2.fromOffset(0, 16),
 					Parent = Button,
 				})
+				New("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					HorizontalAlignment = Enum.HorizontalAlignment.Center,
+					VerticalAlignment = Enum.VerticalAlignment.Center,
+					Padding = UDim.new(0, 8),
+					Parent = ButtonContent,
+				})
+
+				local ButtonIcon
+				local BoxIcon = Library:GetCustomIcon(IconName)
+				if BoxIcon then
+					ButtonIcon = New("ImageLabel", {
+						Image = BoxIcon.Url,
+						ImageColor3 = BoxIcon.Custom and "WhiteColor" or "AccentColor",
+						ImageRectOffset = BoxIcon.ImageRectOffset,
+						ImageRectSize = BoxIcon.ImageRectSize,
+						ImageTransparency = 0.5,
+						AnchorPoint = Vector2.new(0.5, 0.5),
+						Position = UDim2.fromScale(0.5, 0.5),
+						Size = UDim2.fromOffset(24, 24),
+						Parent = Button,
+					})
+				end
+
+				local ButtonLabel
+				if false then --// Icon-only subtab mode
+					ButtonLabel = New("TextLabel", {
+						AutomaticSize = Enum.AutomaticSize.X,
+						BackgroundTransparency = 1,
+						Size = UDim2.fromOffset(0, 16),
+						Text = Name,
+						TextSize = 15,
+						TextTransparency = 0.5,
+						Parent = ButtonContent,
+					})
+				end
 
 				local Line = Library:MakeLine(Button, {
 					AnchorPoint = Vector2.new(0, 1),
@@ -10696,14 +10446,11 @@ function Library:CreateWindow(WindowInfo)
 						ActiveLine.Visible = true
 					end
 					if ButtonIcon then
-						if ButtonIcon:IsA("ImageLabel") then
-							TweenService:Create(ButtonIcon, Library.TweenInfo, { ImageTransparency = 0 }):Play()
-						else
-							TweenService:Create(ButtonIcon, Library.TweenInfo, { TextTransparency = 0 }):Play()
-						end
+						ButtonIcon.ImageTransparency = 0
 					end
 
 					Line.Visible = false
+
 					Container.Visible = true
 
 					Tabbox.ActiveTab = Tab
@@ -10717,13 +10464,8 @@ function Library:CreateWindow(WindowInfo)
 						ActiveLine.Visible = false
 					end
 					if ButtonIcon then
-						if ButtonIcon:IsA("ImageLabel") then
-							TweenService:Create(ButtonIcon, Library.TweenInfo, { ImageTransparency = 0.5 }):Play()
-						else
-							TweenService:Create(ButtonIcon, Library.TweenInfo, { TextTransparency = 0.5 }):Play()
-						end
+						ButtonIcon.ImageTransparency = 0.5
 					end
-
 					Line.Visible = true
 					Container.Visible = false
 
@@ -10783,13 +10525,7 @@ function Library:CreateWindow(WindowInfo)
 					Tab:Show()
 				end
 
-				Button.MouseButton1Click:Connect(function()
-					Library:PlayClickSound()
-					if Library.PulseWindowGlow then
-						Library:PulseWindowGlow()
-					end
-					Tab:Show()
-				end)
+				Button.MouseButton1Click:Connect(Tab.Show)
 
 				setmetatable(Tab, BaseGroupbox)
 
@@ -11299,13 +11035,7 @@ function Library:CreateWindow(WindowInfo)
 		TabButton.MouseLeave:Connect(function()
 			Tab:Hover(false)
 		end)
-		TabButton.MouseButton1Click:Connect(function()
-			Library:PlayClickSound()
-			if Library.PulseWindowGlow then
-				Library:PulseWindowGlow()
-			end
-			Tab:Show()
-		end)
+		TabButton.MouseButton1Click:Connect(Tab.Show)
 
 		Library.Tabs[Name] = Tab
 
@@ -11617,13 +11347,7 @@ function Library:CreateWindow(WindowInfo)
 		TabButton.MouseLeave:Connect(function()
 			Tab:Hover(false)
 		end)
-		TabButton.MouseButton1Click:Connect(function()
-			Library:PlayClickSound()
-			if Library.PulseWindowGlow then
-				Library:PulseWindowGlow()
-			end
-			Tab:Show()
-		end)
+		TabButton.MouseButton1Click:Connect(Tab.Show)
 
 		Tab.Container = TabContainer
 		setmetatable(Tab, BaseGroupbox)
@@ -12086,7 +11810,6 @@ function Library:CreateWindow(WindowInfo)
 				if not IsActive then
 					return
 				end
-				Library:PlayClickSound() -- <-- TAMBAHKAN INI
 				if ButtonInfo.Callback then
 					ButtonInfo.Callback(Dialog)
 				end
@@ -12266,22 +11989,6 @@ function Library:CreateWindow(WindowInfo)
 			ZIndex = 10,
 			Parent = ScreenGui,
 		})
-		
-		--// Floating Button Glow Aura \\--
-		local ToggleBtnGlow = New("ImageLabel", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundTransparency = 1,
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.new(1, 24, 1, 24),
-			Image = "rbxassetid://5028857084",
-			ImageColor3 = "AccentColor",
-			ImageTransparency = 0.45,
-			ScaleType = Enum.ScaleType.Slice,
-			SliceCenter = Rect.new(24, 24, 276, 276),
-			ZIndex = 9,
-			Parent = ToggleBtnFrame,
-		})
-		
 		New("UICorner", {
 			CornerRadius = UDim.new(0, 10),
 			Parent = ToggleBtnFrame,
@@ -12475,7 +12182,7 @@ function Library:CreateWindow(WindowInfo)
 		LockButton.Button.Visible = false
 	end
 
-	if WindowInfo.ShowMobileButtons == false and ToggleButton and LockButton then
+	if WindowInfo.ShowMobileButtons == false then
 		ToggleButton.Button.Visible = false
 		LockButton.Button.Visible = false
 	end
@@ -12502,6 +12209,527 @@ function Library:CreateWindow(WindowInfo)
 
 	Library.Window = Window
 	return Window
+end
+
+--// SECONDARY COMPANION WINDOW: N3 LIVE DASHBOARD (IDENTIK DENGAN WINDOW UTAMA)
+function Library:CreateDashboardWindow(Info)
+	Info = Info or {}
+	local TitleText = Info.Title or "N3 Live Dashboard"
+
+	-- WINDOW UTAMA KEDUA DENGAN STYLE OBSIDIAN
+	local WinFrame = New("Frame", {
+		BackgroundColor3 = "MainColor",
+		BackgroundTransparency = 0.1,
+		Position = Info.Position or UDim2.new(0, 25, 0, 120),
+		Size = UDim2.fromOffset(290, 420),
+		Active = true,
+		ClipsDescendants = true,
+		Parent = Library.ScreenGui or Library.LocalPlayer:WaitForChild("PlayerGui"),
+	})
+	table.insert(
+		Library.Corners,
+		New("UICorner", {
+			CornerRadius = UDim.new(0, Library.CornerRadius),
+			Parent = WinFrame,
+		})
+	)
+	New("UIStroke", {
+		Color = "OutlineColor",
+		Thickness = 1.2,
+		Parent = WinFrame,
+	})
+
+	-- TOPBAR DENGAN AKSEN ICON N3 & DRAG HANDLE
+	local TopBar = New("Frame", {
+		BackgroundColor3 = "BackgroundColor",
+		BackgroundTransparency = 0.3,
+		Size = UDim2.new(1, 0, 0, 32),
+		Parent = WinFrame,
+	})
+
+	local IconImg = New("ImageLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(8, 4),
+		Size = UDim2.fromOffset(24, 24),
+		Image = "rbxassetid://117688744510818", -- Icon resmi N3 Hub
+		Parent = TopBar,
+	})
+
+	local TitleLbl = New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(38, 0),
+		Size = UDim2.new(1, -80, 1, 0),
+		Text = TitleText,
+		TextSize = 12,
+		Font = Enum.Font.GothamBold,
+		TextColor3 = Color3.fromRGB(240, 240, 245),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = TopBar,
+	})
+
+	local MinBtn = New("TextButton", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -8, 0.5, 0),
+		Size = UDim2.fromOffset(22, 22),
+		Text = "−",
+		TextSize = 16,
+		Font = Enum.Font.GothamBold,
+		TextColor3 = Color3.fromRGB(180, 180, 190),
+		Parent = TopBar,
+	})
+
+	-- CONTAINER SCROLL UTAMA DI BAWAH TOPBAR
+	local Container = New("ScrollingFrame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(0, 32),
+		Size = UDim2.new(1, 0, 1, -32),
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = "OutlineColor",
+		Parent = WinFrame,
+	})
+	local ContentLayout = New("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		Padding = UDim.new(0, 7),
+		Parent = Container,
+	})
+	New("UIPadding", {
+		PaddingLeft = UDim.new(0, 8),
+		PaddingRight = UDim.new(0, 8),
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 8),
+		Parent = Container,
+	})
+
+	local function UpdateCanvas()
+		Container.CanvasSize = UDim2.fromOffset(0, ContentLayout.AbsoluteContentSize.Y + 16)
+	end
+	ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(UpdateCanvas)
+
+	-- DRAGGING LOGIC RESMI
+	do
+		local Dragging, DragInput, DragStart, StartPos
+		TopBar.InputBegan:Connect(function(input)
+			if
+				input.UserInputType == Enum.UserInputType.MouseButton1
+				or input.UserInputType == Enum.UserInputType.Touch
+			then
+				Dragging = true
+				DragStart = input.Position
+				StartPos = WinFrame.Position
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						Dragging = false
+					end
+				end)
+			end
+		end)
+		TopBar.InputChanged:Connect(function(input)
+			if
+				input.UserInputType == Enum.UserInputType.MouseMovement
+				or input.UserInputType == Enum.UserInputType.Touch
+			then
+				DragInput = input
+			end
+		end)
+		game:GetService("UserInputService").InputChanged:Connect(function(input)
+			if input == DragInput and Dragging then
+				local delta = input.Position - DragStart
+				WinFrame.Position = UDim2.new(
+					StartPos.X.Scale,
+					StartPos.X.Offset + delta.X,
+					StartPos.Y.Scale,
+					StartPos.Y.Offset + delta.Y
+				)
+			end
+		end)
+	end
+
+	-- TOGGLE MINIMIZE
+	local IsMinimized = false
+	MinBtn.MouseButton1Click:Connect(function()
+		IsMinimized = not IsMinimized
+		if IsMinimized then
+			WinFrame:TweenSize(UDim2.fromOffset(290, 32), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.25, true)
+			MinBtn.Text = "+"
+		else
+			WinFrame:TweenSize(UDim2.fromOffset(290, 420), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.25, true)
+			MinBtn.Text = "−"
+		end
+	end)
+
+	-- =================================================================
+	-- 1. KOTAK TARGET PREVIEW ATAS (3D VIEWPORT + INFO BERTINGKAT)
+	-- =================================================================
+	local TargetCard = New("Frame", {
+		BackgroundColor3 = "BackgroundColor",
+		BackgroundTransparency = 0.35,
+		Size = UDim2.new(1, 0, 0, 78),
+		Parent = Container,
+	})
+	table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, 6), Parent = TargetCard }))
+	New("UIStroke", { Color = "OutlineColor", Thickness = 1, Parent = TargetCard })
+
+	local Viewport3D = New("ViewportFrame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(6, 6),
+		Size = UDim2.fromOffset(66, 66),
+		LightColor = Color3.fromRGB(255, 255, 255),
+		Ambient = Color3.fromRGB(190, 190, 190),
+		LightDirection = Vector3.new(-1, 2, -1),
+		Parent = TargetCard,
+	})
+	local Cam3D = Instance.new("Camera")
+	Cam3D.FieldOfView = 50
+	Cam3D.Parent = Viewport3D
+	Viewport3D.CurrentCamera = Cam3D
+	local World3D = Instance.new("WorldModel")
+	World3D.Parent = Viewport3D
+
+	local TargetInfoBox = New("Frame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(78, 6),
+		Size = UDim2.new(1, -84, 1, -12),
+		Parent = TargetCard,
+	})
+	New(
+		"UIListLayout",
+		{ FillDirection = Enum.FillDirection.Vertical, Padding = UDim.new(0, 1), Parent = TargetInfoBox }
+	)
+
+	local TxtName = New("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 16),
+		Text = "No Target Active",
+		TextSize = 13,
+		RichText = true,
+		Font = Enum.Font.GothamBold,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = TargetInfoBox,
+	})
+	local TxtIncome = New("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 14),
+		Text = '<font color="#57F287"><b>+$0/s</b></font>',
+		TextSize = 11,
+		RichText = true,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = TargetInfoBox,
+	})
+	local TxtStats = New("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 14),
+		Text = "1.00x · 0 Kg",
+		TextSize = 10,
+		RichText = true,
+		TextColor3 = Color3.fromRGB(205, 230, 255),
+		Font = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = TargetInfoBox,
+	})
+	local TxtDist = New("TextLabel", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 14),
+		Text = "Standby (Idle)",
+		TextSize = 10,
+		RichText = true,
+		TextColor3 = Color3.fromRGB(160, 160, 180),
+		Font = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = TargetInfoBox,
+	})
+
+	-- ROTASI 3D VIEWPORT OTOMATIS
+	local CurAngle = 0
+	game:GetService("RunService").RenderStepped:Connect(function(dt)
+		local petModel = World3D:FindFirstChildWhichIsA("Model") or World3D:FindFirstChildWhichIsA("BasePart")
+		if WinFrame.Visible and not IsMinimized and petModel then
+			CurAngle = (CurAngle + dt * 45) % 360
+			local cf, size
+			if petModel:IsA("Model") then
+				cf, size = petModel:GetBoundingBox()
+			else
+				cf, size = petModel.CFrame, petModel.Size
+			end
+			local maxDim = math.max(size.X, size.Y, size.Z)
+			local dist = maxDim / (2 * math.tan(math.rad(Cam3D.FieldOfView / 2))) * 1.35
+			local rad = math.rad(CurAngle)
+			Cam3D.CFrame = CFrame.new(
+				cf.Position + Vector3.new(math.sin(rad) * dist, dist * 0.25, math.cos(rad) * dist),
+				cf.Position
+			)
+		end
+	end)
+
+	-- =================================================================
+	-- 2. HELPER BIKIN SECTION DIVIDER DENGAN TEKS PUTIH RESMI
+	-- =================================================================
+	local function AddSectionDivider(text)
+		local Div = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 18), Parent = Container })
+		local L1 = New(
+			"Frame",
+			{
+				BackgroundColor3 = "OutlineColor",
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, 0, 0.5, 0),
+				Size = UDim2.new(0.2, 0, 0, 1),
+				Parent = Div,
+			}
+		)
+		local Lbl = New(
+			"TextLabel",
+			{
+				BackgroundTransparency = 1,
+				Position = UDim2.new(0.2, 0, 0, 0),
+				Size = UDim2.new(0.6, 0, 1, 0),
+				Text = string.upper(text),
+				TextSize = 10,
+				Font = Enum.Font.GothamBold,
+				TextColor3 = Color3.fromRGB(240, 240, 240),
+				Parent = Div,
+			}
+		)
+		local L2 = New(
+			"Frame",
+			{
+				BackgroundColor3 = "OutlineColor",
+				BorderSizePixel = 0,
+				Position = UDim2.new(0.8, 0, 0.5, 0),
+				Size = UDim2.new(0.2, 0, 0, 1),
+				Parent = Div,
+			}
+		)
+	end
+
+	-- =================================================================
+	-- 3. SECTION STATUS AKSI (STEALING, PLACING, HATCHING, TRAINING)
+	-- =================================================================
+	AddSectionDivider("LIVE BOT ACTIONS")
+	local ActionGrid = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36), Parent = Container })
+	New(
+		"UIGridLayout",
+		{ CellPadding = UDim2.fromOffset(6, 4), CellSize = UDim2.new(0.5, -3, 0, 16), Parent = ActionGrid }
+	)
+
+	local ActionLabels = {}
+	for _, actName in ipairs({ "Stealing", "Placing", "Hatching", "Training" }) do
+		local actLbl = New("TextLabel", {
+			BackgroundColor3 = "BackgroundColor",
+			BackgroundTransparency = 0.5,
+			Size = UDim2.new(1, 0, 1, 0),
+			Text = "• " .. actName,
+			TextSize = 10,
+			Font = Enum.Font.GothamBold,
+			TextColor3 = Color3.fromRGB(160, 160, 170), -- Default putih/abu standar
+			Parent = ActionGrid,
+		})
+		table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, 4), Parent = actLbl }))
+		ActionLabels[actName] = actLbl
+	end
+
+	-- =================================================================
+	-- 4. SECTION PROGRES & STATS (CASH, TOTAL EGGS, SPEED)
+	-- =================================================================
+	AddSectionDivider("PLAYER STATS")
+	local StatsGrid = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 42), Parent = Container })
+	New(
+		"UIGridLayout",
+		{ CellPadding = UDim2.fromOffset(6, 0), CellSize = UDim2.new(0.333, -4, 1, 0), Parent = StatsGrid }
+	)
+
+	local function CreateStatCard(title, defaultVal, colorVal)
+		local Card =
+			New("Frame", { BackgroundColor3 = "BackgroundColor", BackgroundTransparency = 0.4, Parent = StatsGrid })
+		table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, 5), Parent = Card }))
+		New("UIStroke", { Color = "OutlineColor", Thickness = 1, Parent = Card })
+		New(
+			"TextLabel",
+			{
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 16),
+				Text = title,
+				TextSize = 9,
+				Font = Enum.Font.GothamBold,
+				TextColor3 = Color3.fromRGB(170, 170, 185),
+				Parent = Card,
+			}
+		)
+		local ValLbl = New(
+			"TextLabel",
+			{
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(0, 16),
+				Size = UDim2.new(1, 0, 1, -16),
+				Text = defaultVal,
+				TextSize = 12,
+				Font = Enum.Font.GothamBold,
+				TextColor3 = colorVal or Color3.fromRGB(255, 255, 255),
+				Parent = Card,
+			}
+		)
+		return ValLbl
+	end
+
+	local StatCash = CreateStatCard("MONEY", "$0", Color3.fromRGB(87, 242, 135))
+	local StatEggs = CreateStatCard("EGGS", "0", Color3.fromRGB(255, 170, 0))
+	local StatSpeed = CreateStatCard("SPEED", "16", Color3.fromRGB(79, 224, 255))
+
+	-- =================================================================
+	-- 5. SECTION QUICK TOGGLES (BERUPA BUTTON CARD BISA DI-KLIK LANGSUNG!)
+	-- =================================================================
+	AddSectionDivider("QUICK FEATURE TOGGLES")
+	local TogglesGrid = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 78), Parent = Container })
+	New(
+		"UIGridLayout",
+		{ CellPadding = UDim2.fromOffset(6, 6), CellSize = UDim2.new(0.5, -3, 0, 22), Parent = TogglesGrid }
+	)
+
+	local RegisteredToggles = {}
+
+	-- OBJECT CONTROLLER DASHBOARD
+	local Dashboard = {
+		Frame = WinFrame,
+		Container = Container,
+		Type = "DashboardWindow",
+	}
+
+	function Dashboard:AddQuickToggle(name, getStateFunc, onToggleFunc)
+		local Btn = New("TextButton", {
+			BackgroundColor3 = "BackgroundColor",
+			BackgroundTransparency = 0.3,
+			Text = name .. " [OFF]",
+			TextSize = 10,
+			Font = Enum.Font.GothamBold,
+			TextColor3 = Color3.fromRGB(160, 160, 170),
+			Parent = TogglesGrid,
+		})
+		table.insert(Library.Corners, New("UICorner", { CornerRadius = UDim.new(0, 5), Parent = Btn }))
+		local Stroke = New("UIStroke", { Color = "OutlineColor", Thickness = 1, Parent = Btn })
+
+		Btn.MouseButton1Click:Connect(function()
+			local curState = getStateFunc()
+			onToggleFunc(not curState)
+			Dashboard:RefreshToggles()
+		end)
+
+		table.insert(RegisteredToggles, {
+			Name = name,
+			Button = Btn,
+			Stroke = Stroke,
+			GetState = getStateFunc,
+		})
+
+		-- Sesuaikan tinggi container otomatis
+		TogglesGrid.Size = UDim2.new(1, 0, 0, math.ceil(#RegisteredToggles / 2) * 28)
+		UpdateCanvas()
+	end
+
+	function Dashboard:RefreshToggles()
+		for _, tog in ipairs(RegisteredToggles) do
+			local isOn = tog.GetState()
+			if isOn then
+				tog.Button.Text = tog.Name .. " [ON]"
+				tog.Button.TextColor3 = Color3.fromRGB(87, 242, 135)
+				tog.Stroke.Color = Color3.fromRGB(87, 242, 135)
+			else
+				tog.Button.Text = tog.Name .. " [OFF]"
+				tog.Button.TextColor3 = Color3.fromRGB(160, 160, 170)
+				tog.Stroke.Color = Library.Colors.OutlineColor or Color3.fromRGB(50, 50, 60)
+			end
+		end
+	end
+
+	function Dashboard:UpdateTarget(targetData, model3D)
+		if not targetData then
+			TxtName.Text = '<font color="#8A8AA2">No Target Active</font>'
+			TxtIncome.Text = '<font color="#57F287">$0/s</font>'
+			TxtStats.Text = "Standby"
+			TxtDist.Text = "Status: Idle"
+			World3D:ClearAllChildren()
+			return
+		end
+
+		local hex = targetData.Hex or "#FFFFFF"
+		TxtName.Text = string.format(
+			'<b>%s</b>  <font color="%s"><b>%s</b></font>',
+			targetData.Name or "Egg",
+			hex,
+			string.upper(targetData.Rarity or "")
+		)
+		TxtIncome.Text = string.format('<font color="#57F287"><b>+$%s/s</b></font>', targetData.Income or "0")
+
+		local mutTag = (targetData.Mutation and targetData.Mutation ~= "")
+				and (' · <font color="#FFAA00">' .. targetData.Mutation .. "</font>")
+			or ""
+		TxtStats.Text =
+			string.format("%.2fx · %s Kg%s", targetData.Scale or 1, tostring(targetData.Weight or 0), mutTag)
+		TxtDist.Text = targetData.Distance and string.format("Target: %d studs away", math.floor(targetData.Distance))
+			or "Locked on target"
+
+		if model3D then
+			World3D:ClearAllChildren()
+			local clone = model3D:Clone()
+			if clone:IsA("Folder") then
+				local tempM = Instance.new("Model")
+				for _, ch in ipairs(clone:GetChildren()) do
+					if ch:IsA("BasePart") or ch:IsA("Model") then
+						ch:Clone().Parent = tempM
+					end
+				end
+				clone:Destroy()
+				clone = tempM
+			end
+			for _, desc in ipairs(clone:GetDescendants()) do
+				if desc:IsA("BasePart") then
+					desc.Anchored = true
+					desc.CanCollide = false
+				end
+				if desc:IsA("LuaSourceContainer") or desc:IsA("Sound") then
+					desc:Destroy()
+				end
+			end
+			if clone:IsA("BasePart") then
+				clone.Anchored = true
+			end
+			clone.Parent = World3D
+		end
+	end
+
+	function Dashboard:UpdateActions(actionsMap)
+		-- actionsMap = { Stealing = true/false, Placing = true/false, Hatching = true/false, Training = true/false }
+		for actName, isRunning in pairs(actionsMap) do
+			local lbl = ActionLabels[actName]
+			if lbl then
+				if isRunning then
+					lbl.TextColor3 = Color3.fromRGB(87, 242, 135) -- HIJAU TEBAL KALAU LAGI JALAN
+					lbl.Text = "✔ " .. actName
+				else
+					lbl.TextColor3 = Color3.fromRGB(160, 160, 170) -- PUTIH/ABU STANDAR KALAU MATI
+					lbl.Text = "• " .. actName
+				end
+			end
+		end
+	end
+
+	function Dashboard:UpdateStats(statsMap)
+		-- statsMap = { Cash = "$1.3Qa", Eggs = "4 (2/2)", Speed = "350" }
+		if statsMap.Cash then
+			StatCash.Text = statsMap.Cash
+		end
+		if statsMap.Eggs then
+			StatEggs.Text = statsMap.Eggs
+		end
+		if statsMap.Speed then
+			StatSpeed.Text = statsMap.Speed
+		end
+	end
+
+	UpdateCanvas()
+	return Dashboard
 end
 
 function Library:CreateLoading(LoadingInfo)
