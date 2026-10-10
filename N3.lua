@@ -1,23 +1,25 @@
 local a = getgenv and getgenv()
 if not a then
-	return
+    return
 end
 
-if a.luxy_router_debounce and (tick() - a.luxy_router_debounce) <= 5 then
-	return
+-- Debounce diganti prefix n3 biar ga bentrok sama luxy lama
+if a.n3_router_debounce and (tick() - a.n3_router_debounce) <= 5 then
+    return
 end
-a.luxy_router_debounce = tick()
+a.n3_router_debounce = tick()
 
 if not game:IsLoaded() then
-	game.Loaded:Wait()
+    game.Loaded:Wait()
 end
 
 local b = {
-	[107778070777162] = "N3-StealAnEgg.lua",
+    [107778070777162] = "N3-StealAnEgg.lua",
 }
 local c = b[game.PlaceId]
 if not c then
-	return
+    warn("N3 Hub: PlaceId tidak terdaftar!")
+    return
 end
 
 pcall(function()
@@ -26,12 +28,13 @@ pcall(function()
     end
 
     local d = tostring(math.random(10000, 99999))
-
-    local e = "https://github.com/ZedFu3/N3-Hub/tree/main/Games" .. c .. "?nocache=" .. d
+    local e = "https://raw.githubusercontent.com/ZedFu3/N3-Hub/main/Games/" .. c .. "?nocache=" .. d
 
     local f = game:HttpGet(e)
     if f and f ~= "" then
-        getgenv().LUXY_SECURE_LOAD = true 
+        getgenv().N3_SECURE_LOAD = true
         loadstring(f)()
+    else
+        warn("N3 Hub Don't Loaded")
     end
 end)
