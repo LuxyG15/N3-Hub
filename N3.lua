@@ -13,10 +13,7 @@ if not game:IsLoaded() then
 end
 
 local b = {
-	[107778070777162] = "SAE.lua",
-	[95082159892680] = "speed keyboard escape.lua",
-	[118941584817777] = "speed keyboard escape.lua",
-	[97598239454123] = "grow a garden 2.lua",
+	[107778070777162] = "N3-StealAnEgg.lua",
 }
 local c = b[game.PlaceId]
 if not c then
