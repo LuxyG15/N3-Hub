@@ -27,7 +27,7 @@ pcall(function()
 
     local d = tostring(math.random(10000, 99999))
 
-    local e = "https://github.com/LuxyG15/N3-Hub/tree/main/Games/" .. c .. "?nocache=" .. d
+    local e = "https://github.com/ZedFu3/N3-Hub/tree/main/Games" .. c .. "?nocache=" .. d
 
     local f = game:HttpGet(e)
     if f and f ~= "" then
